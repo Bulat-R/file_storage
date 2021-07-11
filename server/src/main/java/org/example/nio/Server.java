@@ -45,10 +45,6 @@ public class Server {
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        new Server();
-    }
-
     private void handleRead(SelectionKey key) throws IOException {
         ByteBuffer buffer = ByteBuffer.allocate(256);
         SocketChannel channel = (SocketChannel) key.channel();
@@ -90,12 +86,12 @@ public class Server {
 
     private String MessageParser(String msg) {
         String[] str = msg.split(" ");
-        switch (str[0].strip()) {
+        switch (str[0].trim()) {
             case "ls":
                 return getFilesList();
             case "cat":
                 if (str.length > 1) {
-                    return readFile(Paths.get(str[1].strip()));
+                    return readFile(Paths.get(str[1].trim()));
                 }
                 return "filename is empty\n";
             default:
@@ -106,7 +102,7 @@ public class Server {
     private String getFilesList() {
         StringBuilder builder = new StringBuilder();
         try {
-            Files.walkFileTree(Paths.get("").toAbsolutePath(), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<>() {
+            Files.walkFileTree(Paths.get("").toAbsolutePath(), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     builder.append(file.getFileName().toString()).append("\n");
