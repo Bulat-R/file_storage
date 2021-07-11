@@ -43,8 +43,4 @@ public class Server {
             worker.shutdownGracefully();
         }
     }
-
-    public static void main(String[] args) {
-        new Server();
-    }
 }
