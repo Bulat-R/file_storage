@@ -29,13 +29,13 @@ public class Server {
                             channel.pipeline().addLast(
                                     new ObjectEncoder(),
                                     new ObjectDecoder(ClassResolvers.cacheDisabled(null)),
-                                    new MessageHandler()
+                                    new ServerCommandHandler()
                             );
                         }
                     });
-            ChannelFuture channelFuture = serverBootstrap.bind(8189).sync();
+            ChannelFuture channelFuture = serverBootstrap.bind(8888).sync();
             log.debug("Server started...");
-            channelFuture.channel().closeFuture().sync(); // block
+            channelFuture.channel().closeFuture().sync();
         } catch (Exception e) {
             log.error("", e);
         } finally {
