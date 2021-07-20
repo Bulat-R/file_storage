@@ -54,18 +54,14 @@ public class ClientMainController {
         if (network == null || !network.isConnected()) {
             connectionProcess();
         } else if (network.isConnected()) {
-            emailLabel.setText("");
-            filesTilePane.getChildren().clear();
-            filesTilePane.setAlignment(Pos.CENTER);
-            filesTilePane.getChildren().add(new Label("Disconnected..."));
-            connectButton.setText("Connect");
-            network.close();
+            disconnectionProcess();
         }
     }
 
     private void connectionProcess() {
         try {
             showConnectionWindow();
+
             network = new NettyNetwork(command -> {
                 log.info("Command received: {}", command);
                 switch (command.getCommandType()) {
@@ -86,11 +82,24 @@ public class ClientMainController {
                         break;
                 }
             }, Config.getHost(), Config.getPort());
+
             authRequest();
+
         } catch (Exception e) {
             log.error("ConnectionProcess exception: {}", e.getMessage());
-            showErrorWindow("Connection error: " + e.getMessage());
         }
+
+        runConnectionInspector();
+    }
+
+    private void disconnectionProcess() {
+        emailLabel.setText("");
+        filesTilePane.getChildren().clear();
+        filesTilePane.setAlignment(Pos.CENTER);
+        filesTilePane.getChildren().add(new Label("Disconnected..."));
+        connectButton.setText("Connect");
+        pathHBox.getChildren().clear();
+        network.close();
     }
 
     private void upload() {
@@ -150,7 +159,7 @@ public class ClientMainController {
 
         directories.forEach(p -> addElementToPane(p, true));
         files.forEach(f -> addElementToPane(f, false));
-        fullPath.forEach(d -> addDirToHBox(d));
+        fullPath.forEach(this::addDirToHBox);
     }
 
     private void addDirToHBox(String dir) {
@@ -194,7 +203,7 @@ public class ClientMainController {
         label.setStyle("-fx-background-color: transparent;");
         label.setOnMouseEntered(l -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color, -fx-outer-border, -fx-inner-border, -fx-body-color;"));
         label.setOnMouseExited(l -> label.setStyle("-fx-background-color: transparent;"));
-        Image image = null;
+        Image image;
         if (isDirectory) {
             image = new Image("dir.png");
             label.setOnMouseClicked(l -> contentRequest(getFullPath(label) + label.getText()));
@@ -212,4 +221,21 @@ public class ClientMainController {
         }
     }
 
+    private void runConnectionInspector() {
+        Thread inspector = new Thread(() -> {
+            while (network != null && network.isConnected()) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            Platform.runLater(() -> {
+                showErrorWindow("Connection lost");
+                disconnectionProcess();
+            });
+        });
+        inspector.setDaemon(true);
+        inspector.start();
+    }
 }
