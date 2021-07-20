@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.model.command.Command;
 
 import java.net.ConnectException;
+import java.util.concurrent.CountDownLatch;
 
 @Slf4j
 public class NettyNetwork {
@@ -23,7 +24,8 @@ public class NettyNetwork {
     EventLoopGroup worker;
 
     public NettyNetwork(CallBack callBack, String host, int port) throws Exception {
-        log.info("NettyNetwork constructor: host {}, port {}", host, port);
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        log.info("NettyNetwork constructor started: host {}, port {}", host, port);
         this.callBack = callBack;
         Thread thread = new Thread(() -> {
             worker = new NioEventLoopGroup();
@@ -43,23 +45,26 @@ public class NettyNetwork {
                             }
                         });
                 ChannelFuture future = bootstrap.connect(host, port).sync();
+                countDownLatch.countDown();
                 future.channel().closeFuture().sync();
             } catch (Exception e) {
-                log.error(e.getMessage());
+                log.error("NettyNetwork constructor exception: {}", e.getMessage());
+                countDownLatch.countDown();
             } finally {
                 worker.shutdownGracefully();
             }
         });
         thread.setDaemon(true);
         thread.start();
+        countDownLatch.await();
     }
 
     public void writeMessage(Command command) throws ConnectException {
-        log.info("Try to send command: {}", command);
         if (isConnected()) {
             channel.writeAndFlush(command);
+            log.info("Command sent: {}", command);
         } else {
-            throw new ConnectException();
+            throw new ConnectException("NettyNetwork not connected");
         }
     }
 

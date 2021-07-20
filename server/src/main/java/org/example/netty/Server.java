@@ -11,12 +11,12 @@ import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.codec.serialization.ObjectEncoder;
 import lombok.extern.slf4j.Slf4j;
+import org.example.service.InMemoryUserService;
 
 @Slf4j
 public class Server {
 
     public Server() {
-
         EventLoopGroup auth = new NioEventLoopGroup(1);
         EventLoopGroup worker = new NioEventLoopGroup();
         try {
@@ -29,15 +29,15 @@ public class Server {
                             channel.pipeline().addLast(
                                     new ObjectEncoder(),
                                     new ObjectDecoder(ClassResolvers.cacheDisabled(null)),
-                                    new ServerCommandHandler()
+                                    new ServerCommandHandler(new InMemoryUserService())
                             );
                         }
                     });
             ChannelFuture channelFuture = serverBootstrap.bind(8888).sync();
-            log.debug("Server started...");
+            log.info("=============== Server started ===============");
             channelFuture.channel().closeFuture().sync();
         } catch (Exception e) {
-            log.error("", e);
+            log.error("Server constructor exception: {}", e.getMessage());
         } finally {
             auth.shutdownGracefully();
             worker.shutdownGracefully();
