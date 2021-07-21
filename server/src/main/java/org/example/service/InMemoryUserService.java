@@ -26,7 +26,7 @@ public class InMemoryUserService implements UserService {
     }
 
     @Override
-    public String getRootPath() {
+    public String getRootPath(User user) {
         return System.getProperty("user.home");
     }
 }

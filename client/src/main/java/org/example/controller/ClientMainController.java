@@ -2,6 +2,7 @@ package org.example.controller;
 
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
+import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
@@ -9,27 +10,35 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ContentDisplay;
-import javafx.scene.control.Label;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.ContextMenuEvent;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.TilePane;
 import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
+import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.example.model.FileDTO;
 import org.example.model.command.Command;
 import org.example.model.command.CommandType;
 import org.example.model.parameter.ParameterType;
-import org.example.model.user.User;
 import org.example.netty.NettyNetwork;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.ConnectException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,14 +56,26 @@ public class ClientMainController {
     private Button uploadButton;
     @FXML
     private TilePane filesTilePane;
+    @FXML
+    private AnchorPane buttonPane;
     private NettyNetwork network;
+    private boolean isManualDisconnect;
 
     @FXML
     private void connectionButtonHandling() {
         if (network == null || !network.isConnected()) {
             connectionProcess();
+            isManualDisconnect = false;
         } else if (network.isConnected()) {
             disconnectionProcess();
+            isManualDisconnect = true;
+        }
+    }
+
+    @FXML
+    private void upload() {
+        if (network.isConnected()) {
+            uploadProcess();
         }
     }
 
@@ -71,6 +92,8 @@ public class ClientMainController {
                             emailLabel.setText(Config.getUser().getEmail());
                             filesTilePane.setAlignment(Pos.TOP_LEFT);
                             filesTilePane.getChildren().clear();
+//                            addContextMenu();
+                            uploadButton.setDisable(false);
                         });
                         break;
                     case AUTH_NO:
@@ -97,15 +120,51 @@ public class ClientMainController {
         filesTilePane.getChildren().clear();
         filesTilePane.setAlignment(Pos.CENTER);
         filesTilePane.getChildren().add(new Label("Disconnected..."));
+//        disableContextMenu(filesTilePane);
         connectButton.setText("Connect");
         pathHBox.getChildren().clear();
+        uploadButton.setDisable(true);
         network.close();
     }
 
-    private void upload() {
-        if (network.isConnected()) {
-//            uploadProcess();
+    private void uploadProcess() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Choose upload file");
+        File file = fileChooser.showOpenDialog(null);
+        if (file != null) {
+            try (FileInputStream is = new FileInputStream(file)) {
+                byte[] buffer = new byte[is.available()];
+                int size = is.read(buffer);
+
+                String md5 = getFileChecksum(file);
+
+                Map<ParameterType, Object> parameters = new HashMap<>();
+                parameters.put(ParameterType.FILE_DTO,
+                        FileDTO.builder()
+                                .owner(Config.getUser())
+                                .name(file.getName())
+                                .path(getFullPath(new Label()))
+                                .content(buffer)
+                                .size((long) size)
+                                .md5(md5)
+                                .build());
+
+                network.writeMessage(new Command(CommandType.FILE_UPLOAD, parameters));
+
+            } catch (Exception e) {
+                log.error("UploadProcess exception: {}", e.getMessage());
+            }
         }
+    }
+
+    private String getFileChecksum(File file) {
+        String md5 = "";
+        try (InputStream is = Files.newInputStream(Paths.get(file.toURI()))) {
+            md5 = DigestUtils.md5Hex(is);
+        } catch (Exception e) {
+            log.error("File checkSum exception: {}", e.getMessage());
+        }
+        return md5;
     }
 
     private void showConnectionWindow() throws IOException {
@@ -129,8 +188,8 @@ public class ClientMainController {
 
     private void contentRequest(String currentDir) {
         try {
-            Map<ParameterType, String> parameters = new HashMap<>();
-            parameters.put(ParameterType.EMAIL, Config.getUser().getEmail());
+            Map<ParameterType, Object> parameters = new HashMap<>();
+            parameters.put(ParameterType.USER, Config.getUser());
             parameters.put(ParameterType.CURRENT_DIR, currentDir);
             network.writeMessage(new Command(CommandType.CONTENT_REQUEST, parameters));
         } catch (ConnectException e) {
@@ -140,7 +199,7 @@ public class ClientMainController {
 
     private void authRequest() {
         try {
-            Map<ParameterType, User> parameters = new HashMap<>();
+            Map<ParameterType, Object> parameters = new HashMap<>();
             parameters.put(ParameterType.USER, Config.getUser());
             network.writeMessage(new Command(CommandType.AUTH_REQUEST, parameters));
         } catch (ConnectException e) {
@@ -155,7 +214,7 @@ public class ClientMainController {
         });
         List<String> fullPath = (List<String>) command.getParameters().get(ParameterType.CURRENT_DIR);
         List<String> directories = (List<String>) command.getParameters().get(ParameterType.DIRECTORIES);
-        List<String> files = (List<String>) command.getParameters().get(ParameterType.FILES);
+        List<String> files = (List<String>) command.getParameters().get(ParameterType.FILES_LIST);
 
         directories.forEach(p -> addElementToPane(p, true));
         files.forEach(f -> addElementToPane(f, false));
@@ -193,6 +252,7 @@ public class ClientMainController {
 
     private void addElementToPane(String name, Boolean isDirectory) {
         Label label = new Label(name);
+        label.setPickOnBounds(true);
         label.setMinSize(60, 80);
         label.setMaxSize(60, 80);
         label.setContentDisplay(ContentDisplay.TOP);
@@ -206,7 +266,11 @@ public class ClientMainController {
         Image image;
         if (isDirectory) {
             image = new Image("dir.png");
-            label.setOnMouseClicked(l -> contentRequest(getFullPath(label) + label.getText()));
+            label.setOnMouseClicked(event -> {
+                if (event.getButton() == MouseButton.PRIMARY) {
+                    contentRequest(getFullPath(label) + label.getText());
+                }
+            });
         } else {
             image = new Image("file.png");
         }
@@ -215,6 +279,7 @@ public class ClientMainController {
     }
 
     public void closeConnection() {
+        isManualDisconnect = true;
         if (network != null) {
             network.close();
             log.info("Network closed");
@@ -230,12 +295,45 @@ public class ClientMainController {
                     e.printStackTrace();
                 }
             }
-            Platform.runLater(() -> {
-                showErrorWindow("Connection lost");
-                disconnectionProcess();
-            });
+            if (!isManualDisconnect) {
+                Platform.runLater(() -> {
+                    showErrorWindow("Connection lost");
+                    disconnectionProcess();
+                });
+            }
         });
         inspector.setDaemon(true);
         inspector.start();
     }
+
+//    private void addContextMenu() {
+//        ContextMenu menu = new ContextMenu();
+//        MenuItem createDir = new MenuItem("Create directory");
+//        MenuItem upload = new MenuItem("Upload file");
+//        menu.getItems().addAll(createDir, upload);
+//        filesTilePane.setOnContextMenuRequested(new EventHandler<ContextMenuEvent>() {
+//            @Override
+//            public void handle(ContextMenuEvent event) {
+//                menu.show(filesTilePane, event.getScreenX(), event.getScreenY());
+//            }
+//        });
+//
+//        filesTilePane.setOnMouseClicked(new EventHandler<MouseEvent>() {
+//            @Override
+//            public void handle(MouseEvent event) {
+//                if (event.getButton() == MouseButton.PRIMARY && menu.isShowing()) {
+//                    menu.hide();
+//                }
+//            }
+//        });
+//    }
+//
+//    private void disableContextMenu(Node node) {
+//        node.setOnContextMenuRequested(new EventHandler<ContextMenuEvent>() {
+//            @Override
+//            public void handle(ContextMenuEvent event) {
+//
+//            }
+//        });
+//    }
 }

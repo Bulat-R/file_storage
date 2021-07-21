@@ -1,5 +1,5 @@
 package org.example.model.parameter;
 
 public enum ParameterType {
-    DIRECTORIES, FILES, USER, EMAIL, CURRENT_DIR, CURRENT_FILE
+    DIRECTORIES, FILES_LIST, USER, EMAIL, CURRENT_DIR, BUFFER, MESSAGE, FILE_DTO, FILE_MD5
 }

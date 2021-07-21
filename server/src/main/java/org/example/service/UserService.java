@@ -6,5 +6,5 @@ public interface UserService {
 
     boolean isAuthorized(User user);
 
-    String getRootPath();
+    String getRootPath(User user);
 }

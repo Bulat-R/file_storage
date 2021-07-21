@@ -2,8 +2,9 @@ package org.example.netty;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.example.model.FileDTO;
 import org.example.model.command.Command;
 import org.example.model.command.CommandType;
 import org.example.model.parameter.ParameterType;
@@ -11,7 +12,9 @@ import org.example.model.user.User;
 import org.example.service.UserService;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
@@ -32,37 +35,75 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
             case AUTH_REQUEST:
                 if (userService.isAuthorized((User) command.getParameters().get(ParameterType.USER))) {
                     ctx.writeAndFlush(new Command(CommandType.AUTH_OK, null));
-                    ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE, getUserFiles("root")));
+                    ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE, getUserFiles("root",
+                            (User) command.getParameters().get(ParameterType.USER))));
                 } else {
                     ctx.writeAndFlush(new Command(CommandType.AUTH_NO, null));
                 }
                 break;
             case CONTENT_REQUEST:
                 ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE,
-                        getUserFiles((String) command.getParameters().get(ParameterType.CURRENT_DIR))));
+                        getUserFiles((String) command.getParameters().get(ParameterType.CURRENT_DIR),
+                                (User) command.getParameters().get(ParameterType.USER))));
+                break;
+            case FILE_UPLOAD:
+                readFile(ctx, command);
                 break;
         }
     }
 
-    @SneakyThrows
-    private Map<ParameterType, List<String>> getUserFiles(String currentDir) {
+    private void readFile(ChannelHandlerContext ctx, Command command) {
+        FileDTO dto = (FileDTO) command.getParameters().get(ParameterType.FILE_DTO);
+        String fullFilePath = getPathToUserDir(dto.getPath(), dto.getOwner()) + dto.getName();
 
-        Map<ParameterType, List<String>> map = new HashMap<>();
+        if (Files.exists(Paths.get(fullFilePath))) {
+            errorMessage(ctx, "File already exists");
+            return;
+        }
+
+        File file = new File(fullFilePath);
+
+        try (FileOutputStream os = new FileOutputStream(file)) {
+            os.write(dto.getContent());
+        } catch (IOException e) {
+            log.error("File write exception: {}", e.getMessage());
+        }
+
+        if (file.length() != dto.getSize() || !dto.getMd5().equals(getFileChecksum(file))) {
+            errorMessage(ctx, "File is corrupted");
+            try {
+                Files.deleteIfExists(Paths.get(fullFilePath));
+            } catch (IOException e) {
+                log.error("Corrupted file delete exception: {}", e.getMessage());
+            }
+            return;
+        }
+
+        ctx.writeAndFlush(new Command(CommandType.FILE_UPLOAD_OK, null));
+    }
+
+    private Map<ParameterType, Object> getUserFiles(String currentDir, User user) {
+
+        Map<ParameterType, Object> map = new HashMap<>();
 
         List<String> directories = new ArrayList<>();
         List<String> files = new ArrayList<>();
 
-        Files.walkFileTree(Paths.get(getFullPathToDir(currentDir)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                if (file.toFile().isDirectory()) {
-                    directories.add(file.getFileName().toString());
-                } else if (file.toFile().isFile()) {
-                    files.add(file.getFileName().toString());
+        try {
+            Files.walkFileTree(Paths.get(getPathToUserDir(currentDir, user)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    if (file.toFile().isDirectory()) {
+                        directories.add(file.getFileName().toString());
+                    } else if (file.toFile().isFile()) {
+                        files.add(file.getFileName().toString());
+                    }
+                    return super.visitFile(file, attrs);
                 }
-                return super.visitFile(file, attrs);
-            }
-        });
+            });
+        } catch (IOException e) {
+            log.error("walkFileTree exception: {}", e.getMessage());
+        }
 
         List<String> current = new ArrayList<>();
         current.add("root");
@@ -71,21 +112,37 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
 
         map.put(ParameterType.DIRECTORIES, directories);
-        map.put(ParameterType.FILES, files);
+        map.put(ParameterType.FILES_LIST, files);
         map.put(ParameterType.CURRENT_DIR, current);
 
         return map;
     }
 
-    private String getFullPathToDir(String currentDir) {
+    private String getPathToUserDir(String currentDir, User user) {
         String separator = File.separator;
-        StringBuilder sb = new StringBuilder(userService.getRootPath());
-        if (!currentDir.equals("root")) {
+        StringBuilder sb = new StringBuilder(userService.getRootPath(user));
+        if (!currentDir.equals("root") && !currentDir.equals("/")) {
             String[] dirs = currentDir.split("/");
             for (int i = 0; i < dirs.length; i++) {
                 sb.append(dirs[i]).append(separator);
             }
         }
         return sb.toString();
+    }
+
+    private String getFileChecksum(File file) {
+        String md5 = "";
+        try (InputStream is = Files.newInputStream(Paths.get(file.toURI()))) {
+            md5 = DigestUtils.md5Hex(is);
+        } catch (Exception e) {
+            log.error("File checkSum exception: {}", e.getMessage());
+        }
+        return md5;
+    }
+
+    private void errorMessage(ChannelHandlerContext ctx, String message) {
+        Map<ParameterType, Object> parameters = new HashMap<>();
+        parameters.put(ParameterType.MESSAGE, message);
+        ctx.writeAndFlush(new Command(CommandType.ERROR, parameters));
     }
 }

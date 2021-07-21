@@ -13,5 +13,5 @@ import java.util.Map;
 @ToString
 public class Command implements Serializable {
     private final CommandType commandType;
-    private final Map<ParameterType, ?> parameters;
+    private final Map<ParameterType, Object> parameters;
 }
