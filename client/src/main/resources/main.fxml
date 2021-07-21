@@ -53,13 +53,20 @@
                   <Insets bottom="5.0" left="5.0" right="5.0" top="5.0" />
                </padding>
                <children>
-                  <VBox prefHeight="200.0" prefWidth="100.0" spacing="2.0" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
+                  <VBox spacing="2.0" style="-fx-focus-color: transparent; -fx-border-color: transparent;" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
                      <children>
                         <HBox fx:id="pathHBox" alignment="CENTER_LEFT" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" minHeight="30.0" prefHeight="30.0" prefWidth="10000.0" spacing="3.0" />
-                        <TilePane fx:id="filesTilePane" alignment="CENTER" hgap="5.0" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefHeight="10000.0" prefWidth="10000.0" tileAlignment="TOP_CENTER" vgap="5.0">
-                           <children>
-                              <Label text="Disconnected..." />
-                           </children></TilePane>
+                        <ScrollPane fx:id="scrollPane" fitToWidth="true" focusTraversable="false" hbarPolicy="NEVER" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" style="-fx-focus-color: transparent; -fx-border-color: transparent; -fx-background-insets: 0;" VBox.vgrow="ALWAYS">
+                           <content>
+                              <TilePane fx:id="filesTilePane" alignment="CENTER" hgap="5.0" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefHeight="350.0" prefWidth="380.0" tileAlignment="TOP_CENTER" vgap="5.0">
+                                 <children>
+                                    <Label text="Disconnected..." />
+                                 </children>
+                                 <opaqueInsets>
+                                    <Insets />
+                                 </opaqueInsets>
+                              </TilePane>
+                           </content></ScrollPane>
                      </children>
                   </VBox>
                </children>
