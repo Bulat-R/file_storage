@@ -20,7 +20,7 @@ public class ClientRunner extends Application {
             ((ClientMainController) loader.getController()).closeConnection();
             primaryStage.close();
         });
-        primaryStage.getIcons().add(new Image(getClass().getClassLoader().getResourceAsStream("client.png")));
+        primaryStage.getIcons().add(new Image(getClass().getClassLoader().getResourceAsStream("client1.png")));
         primaryStage.setMinWidth(600);
         primaryStage.setMinHeight(400);
         primaryStage.show();

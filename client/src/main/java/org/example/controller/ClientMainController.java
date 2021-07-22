@@ -2,6 +2,7 @@ package org.example.controller;
 
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -13,7 +14,6 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
@@ -26,10 +26,11 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.example.model.FileDTO;
+import org.example.model.command.ContentActionType;
+import org.example.model.dto.FileDTO;
 import org.example.model.command.Command;
 import org.example.model.command.CommandType;
-import org.example.model.parameter.ParameterType;
+import org.example.model.command.ParameterType;
 import org.example.netty.NettyNetwork;
 
 import java.io.File;
@@ -56,6 +57,8 @@ public class ClientMainController {
     private Button uploadButton;
     @FXML
     private TilePane filesTilePane;
+    @FXML
+    private AnchorPane mainPane;
     private NettyNetwork network;
     private boolean isManualDisconnect;
 
@@ -135,7 +138,7 @@ public class ClientMainController {
     private void uploadProcess() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Choose upload file");
-        File file = fileChooser.showOpenDialog(null);
+        File file = fileChooser.showOpenDialog(mainPane.getScene().getWindow());
         if (file != null) {
             try (FileInputStream is = new FileInputStream(file)) {
                 byte[] buffer = new byte[is.available()];
@@ -191,9 +194,10 @@ public class ClientMainController {
         alert.showAndWait();
     }
 
-    private void contentRequest(String currentDir) {
+    private void contentRequest(String currentDir, ContentActionType actionType) {
         try {
             Map<ParameterType, Object> parameters = new HashMap<>();
+            parameters.put(ParameterType.CONTENT_ACTION, actionType);
             parameters.put(ParameterType.USER, Config.getUser());
             parameters.put(ParameterType.CURRENT_DIR, currentDir);
             network.writeMessage(new Command(CommandType.CONTENT_REQUEST, parameters));
@@ -231,8 +235,8 @@ public class ClientMainController {
         label.setPadding(new Insets(2, 3, 2, 3));
         label.setStyle("-fx-background-color: transparent;");
         label.setOnMouseEntered(l -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color, -fx-outer-border, -fx-inner-border, -fx-body-color;"));
-        label.setOnMouseExited(l -> label.setStyle("-fx-background-color: transparent;"));
-        label.setOnMouseClicked(l -> contentRequest(getFullPath(label)));
+//        label.setOnMouseExited(l -> label.setStyle("-fx-background-color: transparent;"));
+        label.setOnMouseClicked(l -> contentRequest(getFullPath(label), ContentActionType.OPEN));
         Platform.runLater(() -> pathHBox.getChildren().add(label));
     }
 
@@ -266,18 +270,20 @@ public class ClientMainController {
         label.setFont(new Font(10));
         label.setWrapText(true);
         label.setStyle("-fx-background-color: transparent;");
-        label.setOnMouseEntered(l -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color, -fx-outer-border, -fx-inner-border, -fx-body-color;"));
-        label.setOnMouseExited(l -> label.setStyle("-fx-background-color: transparent;"));
+        label.setOnMouseEntered(event -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color, -fx-outer-border, -fx-inner-border, -fx-body-color;"));
+        label.setOnMouseExited(event -> label.setStyle("-fx-background-color: transparent;"));
         Image image;
         if (isDirectory) {
             image = new Image("dir.png");
             label.setOnMouseClicked(event -> {
                 if (event.getButton() == MouseButton.PRIMARY) {
-                    contentRequest(getFullPath(label) + label.getText());
+                    contentRequest(getFullPath(label) + label.getText(), ContentActionType.OPEN);
                 }
             });
+            addLabelContextMenu(label, ContentActionType.OPEN, ContentActionType.RENAME, ContentActionType.DELETE);
         } else {
             image = new Image("file.png");
+            addLabelContextMenu(label, ContentActionType.DOWNLOAD, ContentActionType.RENAME, ContentActionType.DELETE);
         }
         label.setGraphic(new ImageView(image));
         Platform.runLater(() -> filesTilePane.getChildren().add(label));
@@ -311,34 +317,37 @@ public class ClientMainController {
         inspector.start();
     }
 
-//    private void addContextMenu() {
-//        ContextMenu menu = new ContextMenu();
-//        MenuItem createDir = new MenuItem("Create directory");
-//        MenuItem upload = new MenuItem("Upload file");
-//        menu.getItems().addAll(createDir, upload);
-//        filesTilePane.setOnContextMenuRequested(new EventHandler<ContextMenuEvent>() {
-//            @Override
-//            public void handle(ContextMenuEvent event) {
-//                menu.show(filesTilePane, event.getScreenX(), event.getScreenY());
-//            }
-//        });
-//
-//        filesTilePane.setOnMouseClicked(new EventHandler<MouseEvent>() {
-//            @Override
-//            public void handle(MouseEvent event) {
-//                if (event.getButton() == MouseButton.PRIMARY && menu.isShowing()) {
-//                    menu.hide();
+    private void addLabelContextMenu(Label label, ContentActionType... actionTypes) {
+        ContextMenu menu = new ContextMenu();
+        for (ContentActionType actionType : actionTypes) {
+            MenuItem item = new MenuItem(actionType.getValue());
+//            item.addEventHandler(MouseEvent.MOUSE_CLICKED, new EventHandler<MouseEvent>() {
+//                @Override
+//                public void handle(MouseEvent event) {
+//                    if (event.getButton() == MouseButton.PRIMARY) {
+//                        contentRequest(label.getText(), actionType);
+//                    }
+//                    event.consume();
 //                }
-//            }
-//        });
-//    }
-//
-//    private void disableContextMenu(Node node) {
-//        node.setOnContextMenuRequested(new EventHandler<ContextMenuEvent>() {
-//            @Override
-//            public void handle(ContextMenuEvent event) {
-//
-//            }
-//        });
-//    }
+//            });
+            //TODO не реагирует на клик в контекстном меню (rightClick на папке или файле)
+            item.setOnAction(new EventHandler<ActionEvent>() {
+                @Override
+                public void handle(ActionEvent event) {
+                    contentRequest(label.getText(), actionType);
+                    event.consume();
+                }
+            });
+
+            menu.getItems().add(item);
+        }
+        label.setOnContextMenuRequested(event -> menu.show(filesTilePane, event.getScreenX() - 5, event.getScreenY() - 5));
+
+        label.setOnMouseExited(event -> {
+            if (menu.isShowing()) {
+                menu.hide();
+            }
+            label.setStyle("-fx-background-color: transparent;");
+        });
+    }
 }

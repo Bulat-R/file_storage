@@ -4,10 +4,10 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.example.model.FileDTO;
+import org.example.model.dto.FileDTO;
 import org.example.model.command.Command;
 import org.example.model.command.CommandType;
-import org.example.model.parameter.ParameterType;
+import org.example.model.command.ParameterType;
 import org.example.model.user.User;
 import org.example.service.UserService;
 
@@ -33,13 +33,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         log.info("Command received: {}", command);
         switch (command.getCommandType()) {
             case AUTH_REQUEST:
-                if (userService.isAuthorized((User) command.getParameters().get(ParameterType.USER))) {
-                    ctx.writeAndFlush(new Command(CommandType.AUTH_OK, null));
-                    ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE, getUserFiles("root",
-                            (User) command.getParameters().get(ParameterType.USER))));
-                } else {
-                    ctx.writeAndFlush(new Command(CommandType.AUTH_NO, null));
-                }
+                userAuthProcess(ctx, command);
                 break;
             case CONTENT_REQUEST:
                 ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE,
@@ -47,17 +41,27 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
                                 (User) command.getParameters().get(ParameterType.USER))));
                 break;
             case FILE_UPLOAD:
-                readFile(ctx, command);
+                uploadFileProcess(ctx, command);
                 break;
         }
     }
 
-    private void readFile(ChannelHandlerContext ctx, Command command) {
+    private void userAuthProcess(ChannelHandlerContext ctx, Command command) {
+        if (userService.isAuthorized((User) command.getParameters().get(ParameterType.USER))) {
+            ctx.writeAndFlush(new Command(CommandType.AUTH_OK, null));
+            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE, getUserFiles("root",
+                    (User) command.getParameters().get(ParameterType.USER))));
+        } else {
+            ctx.writeAndFlush(new Command(CommandType.AUTH_NO, null));
+        }
+    }
+
+    private void uploadFileProcess(ChannelHandlerContext ctx, Command command) {
         FileDTO dto = (FileDTO) command.getParameters().get(ParameterType.FILE_DTO);
         String fullFilePath = getPathToUserDir(dto.getPath(), dto.getOwner()) + dto.getName();
 
         if (Files.exists(Paths.get(fullFilePath))) {
-            errorMessage(ctx, "File already exists");
+            sendErrorMessage(ctx, "File already exists");
             return;
         }
 
@@ -70,7 +74,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
 
         if (file.length() != dto.getSize() || !dto.getMd5().equals(getFileChecksum(file))) {
-            errorMessage(ctx, "File is corrupted");
+            sendErrorMessage(ctx, "File is corrupted");
             try {
                 Files.deleteIfExists(Paths.get(fullFilePath));
             } catch (IOException e) {
@@ -141,7 +145,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         return md5;
     }
 
-    private void errorMessage(ChannelHandlerContext ctx, String message) {
+    private void sendErrorMessage(ChannelHandlerContext ctx, String message) {
         Map<ParameterType, Object> parameters = new HashMap<>();
         parameters.put(ParameterType.MESSAGE, message);
         ctx.writeAndFlush(new Command(CommandType.ERROR, parameters));
