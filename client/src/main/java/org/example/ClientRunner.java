@@ -4,6 +4,7 @@ import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.image.Image;
 import javafx.stage.Stage;
 import org.example.controller.ClientMainController;
 
@@ -19,6 +20,7 @@ public class ClientRunner extends Application {
             ((ClientMainController) loader.getController()).closeConnection();
             primaryStage.close();
         });
+        primaryStage.getIcons().add(new Image(getClass().getClassLoader().getResourceAsStream("client.png")));
         primaryStage.setMinWidth(600);
         primaryStage.setMinHeight(400);
         primaryStage.show();

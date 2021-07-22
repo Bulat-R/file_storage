@@ -80,6 +80,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
 
         ctx.writeAndFlush(new Command(CommandType.FILE_UPLOAD_OK, null));
+        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE, getUserFiles(dto.getPath(), dto.getOwner())));
     }
 
     private Map<ParameterType, Object> getUserFiles(String currentDir, User user) {

@@ -56,8 +56,6 @@ public class ClientMainController {
     private Button uploadButton;
     @FXML
     private TilePane filesTilePane;
-    @FXML
-    private AnchorPane buttonPane;
     private NettyNetwork network;
     private boolean isManualDisconnect;
 
@@ -97,12 +95,19 @@ public class ClientMainController {
                         });
                         break;
                     case AUTH_NO:
-                        Platform.runLater(() -> showErrorWindow("Bad credentials"));
+                        Platform.runLater(() -> showAlertWindow("Bad credentials", Alert.AlertType.ERROR));
                         network.close();
                         break;
                     case CONTENT_RESPONSE:
                         refreshClientContent(command);
                         break;
+                    case FILE_UPLOAD_OK:
+                        Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
+                        break;
+                    case ERROR:
+                        Platform.runLater(() -> showAlertWindow((String) command.getParameters().get(ParameterType.MESSAGE), Alert.AlertType.ERROR));
+                        break;
+
                 }
             }, Config.getHost(), Config.getPort());
 
@@ -178,9 +183,9 @@ public class ClientMainController {
         stage.showAndWait();
     }
 
-    private void showErrorWindow(String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle("Error");
+    private void showAlertWindow(String message, Alert.AlertType type) {
+        Alert alert = new Alert(type);
+        alert.setTitle("");
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
@@ -297,7 +302,7 @@ public class ClientMainController {
             }
             if (!isManualDisconnect) {
                 Platform.runLater(() -> {
-                    showErrorWindow("Connection lost");
+                    showAlertWindow("Connection lost", Alert.AlertType.ERROR);
                     disconnectionProcess();
                 });
             }
