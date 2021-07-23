@@ -6,6 +6,7 @@ public class Config {
     private static User user;
     private static String host;
     private static int port;
+    private static char [] forbidden = new char[] {'/', '\\', '*', '?', ':', '|', '>', '<', '\"', '+', '%', '!', '\'', '@', '~'};
 
     private Config() {
     }
@@ -51,5 +52,9 @@ public class Config {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("port is not valid");
         }
+    }
+
+    public static char[] getForbidden() {
+        return forbidden;
     }
 }

@@ -39,16 +39,14 @@ import java.io.InputStream;
 import java.net.ConnectException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 public class ClientMainController {
 
-    @FXML
-    private ScrollPane scrollPane;
     @FXML
     private Label emailLabel;
     @FXML
@@ -109,7 +107,7 @@ public class ClientMainController {
                         Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
                         break;
                     case ERROR:
-                        Platform.runLater(() -> showAlertWindow((String) command.getParameters().get(ParameterType.MESSAGE), Alert.AlertType.ERROR));
+                        Platform.runLater(() -> showAlertWindow((String) command.getParameter(ParameterType.MESSAGE), Alert.AlertType.ERROR));
                         break;
 
                 }
@@ -137,27 +135,26 @@ public class ClientMainController {
 
     private void uploadProcess() {
         FileChooser fileChooser = new FileChooser();
+        fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
         fileChooser.setTitle("Choose upload file");
         File file = fileChooser.showOpenDialog(mainPane.getScene().getWindow());
         if (file != null) {
             try (FileInputStream is = new FileInputStream(file)) {
                 byte[] buffer = new byte[is.available()];
                 int size = is.read(buffer);
-
                 String md5 = getFileChecksum(file);
 
-                Map<ParameterType, Object> parameters = new HashMap<>();
-                parameters.put(ParameterType.FILE_DTO,
-                        FileDTO.builder()
-                                .owner(Config.getUser())
-                                .name(file.getName())
-                                .path(getFullPath(new Label()))
-                                .content(buffer)
-                                .size((long) size)
-                                .md5(md5)
-                                .build());
-
-                network.writeMessage(new Command(CommandType.FILE_UPLOAD, parameters));
+                network.writeMessage(new Command(CommandType.FILE_UPLOAD)
+                        .setParameter(ParameterType.FILE_DTO,
+                                FileDTO.builder()
+                                        .owner(Config.getUser())
+                                        .name(file.getName())
+                                        .path(getFullPath(new Label()))
+                                        .content(buffer)
+                                        .size((long) size)
+                                        .md5(md5)
+                                        .build())
+                );
 
             } catch (Exception e) {
                 log.error("UploadProcess exception: {}", e.getMessage());
@@ -195,35 +192,77 @@ public class ClientMainController {
     }
 
     private void contentRequest(String currentDir, ContentActionType actionType) {
-        try {
-            Map<ParameterType, Object> parameters = new HashMap<>();
-            parameters.put(ParameterType.CONTENT_ACTION, actionType);
-            parameters.put(ParameterType.USER, Config.getUser());
-            parameters.put(ParameterType.CURRENT_DIR, currentDir);
-            network.writeMessage(new Command(CommandType.CONTENT_REQUEST, parameters));
-        } catch (ConnectException e) {
-            log.error("Connection exception: {}", e.getMessage());
+        Command command = new Command(CommandType.CONTENT_REQUEST)
+                .setParameter(ParameterType.CONTENT_ACTION, actionType)
+                .setParameter(ParameterType.USER, Config.getUser())
+                .setParameter(ParameterType.CURRENT_DIR, currentDir);
+        switch (actionType) {
+            case DELETE:
+                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                alert.setTitle("Delete");
+                alert.setHeaderText("Are you sure you want to delete?");
+                Optional<ButtonType> result = alert.showAndWait();
+                if (!result.isPresent() || result.get() != ButtonType.OK) {
+                    return;
+                }
+                break;
+            case RENAME:
+                String oldName = currentDir.substring(currentDir.lastIndexOf("/") + 1);
+                TextInputDialog dialog = new TextInputDialog(oldName);
+                dialog.setTitle("Rename");
+                dialog.setHeaderText("Enter new name");
+                Optional<String> newName = dialog.showAndWait();
+                if (newName.isPresent() && isValidName(newName.get()) && !oldName.equals(newName.get())) {
+                    command.setParameter(ParameterType.NEW_NAME, newName.get());
+                } else {
+                    return;
+                }
+                break;
+            case DOWNLOAD:
+//                DirectoryChooser directoryChooser = new DirectoryChooser();
+//                directoryChooser.setTitle("Choose directory for download");
+//                directoryChooser.setInitialDirectory(new File(System.getProperty("user.home")));
+//                File destinationDir = directoryChooser.showDialog(mainPane.getScene().getWindow());
+                break;
         }
+        try {
+            network.writeMessage(command);
+        } catch (Exception e) {
+            log.error("Content request exception: {}", e.getMessage());
+            showAlertWindow(e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    private boolean isValidName(String s) {
+        if (s.trim().isEmpty()) {
+            return false;
+        }
+        for (char ch : Config.getForbidden()) {
+            if (s.contains("" + ch)) {
+                showAlertWindow("Forbidden symbol: " + ch, Alert.AlertType.ERROR);
+                return false;
+            }
+        }
+        return true;
     }
 
     private void authRequest() {
         try {
-            Map<ParameterType, Object> parameters = new HashMap<>();
-            parameters.put(ParameterType.USER, Config.getUser());
-            network.writeMessage(new Command(CommandType.AUTH_REQUEST, parameters));
+            network.writeMessage(new Command(CommandType.AUTH_REQUEST).setParameter(ParameterType.USER, Config.getUser()));
         } catch (ConnectException e) {
             log.error("Connection exception: {}", e.getMessage());
         }
     }
 
+    @SuppressWarnings("unchecked")
     private void refreshClientContent(Command command) {
         Platform.runLater(() -> {
             filesTilePane.getChildren().clear();
             pathHBox.getChildren().clear();
         });
-        List<String> fullPath = (List<String>) command.getParameters().get(ParameterType.CURRENT_DIR);
-        List<String> directories = (List<String>) command.getParameters().get(ParameterType.DIRECTORIES);
-        List<String> files = (List<String>) command.getParameters().get(ParameterType.FILES_LIST);
+        List<String> fullPath = (List<String>) command.getParameter(ParameterType.CURRENT_DIR);
+        List<String> directories = (List<String>) command.getParameter(ParameterType.DIRECTORIES);
+        List<String> files = (List<String>) command.getParameter(ParameterType.FILES);
 
         directories.forEach(p -> addElementToPane(p, true));
         files.forEach(f -> addElementToPane(f, false));
@@ -238,7 +277,7 @@ public class ClientMainController {
         label.setOnMouseExited(event -> label.setStyle("-fx-background-color: transparent;"));
         label.setOnMouseClicked(event -> {
             if (event.getButton() == MouseButton.PRIMARY) {
-                ClientMainController.this.contentRequest(ClientMainController.this.getFullPath(label), ContentActionType.OPEN);
+                ClientMainController.this.contentRequest(getFullPath(label), ContentActionType.OPEN);
             }
         });
         Platform.runLater(() -> pathHBox.getChildren().add(label));
@@ -273,9 +312,6 @@ public class ClientMainController {
         label.setAlignment(Pos.TOP_CENTER);
         label.setFont(new Font(10));
         label.setWrapText(true);
-        label.setStyle("-fx-background-color: transparent;");
-//        label.setOnMouseEntered(event -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color, -fx-outer-border, -fx-inner-border, -fx-body-color;"));
-//        label.setOnMouseExited(event -> label.setStyle("-fx-background-color: transparent;"));
         Image image;
         if (isDirectory) {
             image = new Image("dir.png");
@@ -328,8 +364,7 @@ public class ClientMainController {
             if (event.isPrimaryButtonDown()) {
                 String s = ((ContextMenuContent.MenuItemContainer) event.getTarget()).getItem().getId();
                 ContentActionType type = ContentActionType.valueOf(s.toUpperCase(Locale.ROOT));
-                log.info(s);
-                contentRequest(label.getText(), type);
+                Platform.runLater(() -> contentRequest(getFullPath(label) + label.getText(), type));
                 event.consume();
             }
         });
@@ -342,7 +377,8 @@ public class ClientMainController {
 
         label.setOnContextMenuRequested(event -> menu.show(filesTilePane, event.getScreenX() - 5, event.getScreenY() - 5));
 
-        label.setOnMouseEntered(event -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color, -fx-outer-border, -fx-inner-border, -fx-body-color;"));
+        label.setOnMouseEntered(event -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color," +
+                "-fx-outer-border, -fx-inner-border, -fx-body-color;"));
 
         label.setOnMouseExited(event -> {
             if (menu.isShowing()) {

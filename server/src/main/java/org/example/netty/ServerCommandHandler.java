@@ -4,10 +4,11 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.example.model.dto.FileDTO;
 import org.example.model.command.Command;
 import org.example.model.command.CommandType;
+import org.example.model.command.ContentActionType;
 import org.example.model.command.ParameterType;
+import org.example.model.dto.FileDTO;
 import org.example.model.user.User;
 import org.example.service.UserService;
 
@@ -29,16 +30,32 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, Command command) throws Exception {
-        log.info("Command received: {}", command);
+    protected void channelRead0(ChannelHandlerContext ctx, Command command) {
+        User user = (User) command.getParameter(ParameterType.USER);
+        log.info("User: {}, command received: {}", user, command);
         switch (command.getCommandType()) {
             case AUTH_REQUEST:
-                userAuthProcess(ctx, command);
+                userAuthProcess(ctx, user);
                 break;
             case CONTENT_REQUEST:
-                ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE,
-                        getUserFiles((String) command.getParameters().get(ParameterType.CURRENT_DIR),
-                                (User) command.getParameters().get(ParameterType.USER))));
+                String currentDir = (String) command.getParameter(ParameterType.CURRENT_DIR);
+                String path = getPathToUserFile(currentDir, user);
+                if (!Files.exists(Paths.get(path))) {
+                    sendErrorMessage(ctx, "NOT FOUND");
+                    return;
+                }
+                ContentActionType type = (ContentActionType) command.getParameter(ParameterType.CONTENT_ACTION);
+                switch (type) {
+                    case OPEN:
+                        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(currentDir, user)));
+                        break;
+                    case RENAME:
+
+                    case DELETE:
+                    case DOWNLOAD:
+                        sendErrorMessage(ctx, "METHOD NOT YET REALISED");
+                        break;
+                }
                 break;
             case FILE_UPLOAD:
                 uploadFileProcess(ctx, command);
@@ -46,19 +63,18 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
     }
 
-    private void userAuthProcess(ChannelHandlerContext ctx, Command command) {
-        if (userService.isAuthorized((User) command.getParameters().get(ParameterType.USER))) {
-            ctx.writeAndFlush(new Command(CommandType.AUTH_OK, null));
-            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE, getUserFiles("root",
-                    (User) command.getParameters().get(ParameterType.USER))));
+    private void userAuthProcess(ChannelHandlerContext ctx, User user) {
+        if (userService.isAuthorized(user)) {
+            ctx.writeAndFlush(new Command(CommandType.AUTH_OK));
+            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles("root", user)));
         } else {
-            ctx.writeAndFlush(new Command(CommandType.AUTH_NO, null));
+            ctx.writeAndFlush(new Command(CommandType.AUTH_NO));
         }
     }
 
     private void uploadFileProcess(ChannelHandlerContext ctx, Command command) {
-        FileDTO dto = (FileDTO) command.getParameters().get(ParameterType.FILE_DTO);
-        String fullFilePath = getPathToUserDir(dto.getPath(), dto.getOwner()) + dto.getName();
+        FileDTO dto = (FileDTO) command.getParameter(ParameterType.FILE_DTO);
+        String fullFilePath = getPathToUserFile(dto.getPath(), dto.getOwner()) + dto.getName();
 
         if (Files.exists(Paths.get(fullFilePath))) {
             sendErrorMessage(ctx, "File already exists");
@@ -83,19 +99,19 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
             return;
         }
 
-        ctx.writeAndFlush(new Command(CommandType.FILE_UPLOAD_OK, null));
-        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE, getUserFiles(dto.getPath(), dto.getOwner())));
+        ctx.writeAndFlush(new Command(CommandType.FILE_UPLOAD_OK));
+        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(dto.getPath(), dto.getOwner())));
     }
 
     private Map<ParameterType, Object> getUserFiles(String currentDir, User user) {
 
-        Map<ParameterType, Object> map = new HashMap<>();
+        Map<ParameterType, Object> parameters = new HashMap<>();
 
         List<String> directories = new ArrayList<>();
         List<String> files = new ArrayList<>();
 
         try {
-            Files.walkFileTree(Paths.get(getPathToUserDir(currentDir, user)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
+            Files.walkFileTree(Paths.get(getPathToUserFile(currentDir, user)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     if (file.toFile().isDirectory()) {
@@ -116,20 +132,20 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
             Arrays.stream(currentDir.split("/")).filter(str -> !str.isEmpty()).forEach(current::add);
         }
 
-        map.put(ParameterType.DIRECTORIES, directories);
-        map.put(ParameterType.FILES_LIST, files);
-        map.put(ParameterType.CURRENT_DIR, current);
+        parameters.put(ParameterType.DIRECTORIES, directories);
+        parameters.put(ParameterType.FILES, files);
+        parameters.put(ParameterType.CURRENT_DIR, current);
 
-        return map;
+        return parameters;
     }
 
-    private String getPathToUserDir(String currentDir, User user) {
+    private String getPathToUserFile(String currentDir, User user) {
         String separator = File.separator;
         StringBuilder sb = new StringBuilder(userService.getRootPath(user));
         if (!currentDir.equals("root") && !currentDir.equals("/")) {
             String[] dirs = currentDir.split("/");
-            for (int i = 0; i < dirs.length; i++) {
-                sb.append(dirs[i]).append(separator);
+            for (String dir : dirs) {
+                sb.append(dir).append(separator);
             }
         }
         return sb.toString();
@@ -146,8 +162,6 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
     }
 
     private void sendErrorMessage(ChannelHandlerContext ctx, String message) {
-        Map<ParameterType, Object> parameters = new HashMap<>();
-        parameters.put(ParameterType.MESSAGE, message);
-        ctx.writeAndFlush(new Command(CommandType.ERROR, parameters));
+        ctx.writeAndFlush(new Command(CommandType.ERROR).setParameter(ParameterType.MESSAGE, message));
     }
 }
