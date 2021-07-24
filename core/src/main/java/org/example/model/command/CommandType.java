@@ -9,5 +9,6 @@ public enum CommandType {
     ERROR,
     FILE_UPLOAD_OK,
     FILE_DOWNLOAD,
-    DELETE_OK
+    DELETE_OK,
+    RENAME_OK
 }

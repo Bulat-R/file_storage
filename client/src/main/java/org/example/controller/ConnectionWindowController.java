@@ -35,13 +35,10 @@ public class ConnectionWindowController implements Initializable {
                     .email(emailTextField.getText())
                     .password(passwordTextField.getText())
                     .build();
-
             Config.setUser(user);
             Config.setHost(hostTextField.getText());
             Config.setPort(portTextField.getText());
-
             saveProperties();
-
             Stage stage = (Stage) connectButton.getScene().getWindow();
             stage.close();
         } catch (Exception e) {

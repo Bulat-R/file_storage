@@ -100,6 +100,7 @@ public class ClientMainController {
                         break;
                     case FILE_UPLOAD_OK:
                     case DELETE_OK:
+                    case RENAME_OK:
                         Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
                         break;
                     case ERROR:
