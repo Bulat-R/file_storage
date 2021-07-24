@@ -8,5 +8,6 @@ public enum CommandType {
     FILE_UPLOAD,
     ERROR,
     FILE_UPLOAD_OK,
-    FILE_DOWNLOAD
+    FILE_DOWNLOAD,
+    DELETE_OK
 }

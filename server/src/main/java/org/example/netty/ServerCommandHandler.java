@@ -2,7 +2,6 @@ package org.example.netty;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import javafx.scene.control.Label;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.example.model.command.Command;
@@ -36,21 +35,25 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
                 userAuthProcess(ctx, user);
                 break;
             case CONTENT_REQUEST:
-                String currentDir = (String) command.getParameter(ParameterType.CURRENT_DIR);
-                String path = getPathToUserFile(currentDir, user);
+                ContentActionType type = (ContentActionType) command.getParameter(ParameterType.CONTENT_ACTION);
+                String current = (String) command.getParameter(ParameterType.CURRENT);
+                String path = getPathToUserFile(current, user);
                 if (!Files.exists(Paths.get(path))) {
                     sendErrorMessage(ctx, "NOT FOUND");
                     return;
                 }
-                ContentActionType type = (ContentActionType) command.getParameter(ParameterType.CONTENT_ACTION);
                 switch (type) {
                     case OPEN:
-                        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(currentDir, user)));
+                        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current, user)));
                         break;
                     case DOWNLOAD:
-                        sendFileProcess(ctx, path, user);
+                        sendFileProcess(ctx, path);
                         break;
                     case DELETE:
+                        deleteProcess(ctx, path);
+                        log.info(current.substring(0, current.lastIndexOf("/")));
+                        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")), user)));
+                        break;
                     case RENAME:
                         sendErrorMessage(ctx, "METHOD NOT YET REALISED");
                         break;
@@ -62,7 +65,28 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
     }
 
-    private void sendFileProcess(ChannelHandlerContext ctx, String path, User user) {
+    private void deleteProcess(ChannelHandlerContext ctx, String path) {
+        File file = new File(path);
+        try {
+            deleteFile(file);
+            ctx.writeAndFlush(new Command(CommandType.DELETE_OK));
+        } catch (IOException e) {
+            ctx.writeAndFlush(new Command(CommandType.ERROR).setParameter(ParameterType.MESSAGE, e.getMessage()));
+            log.error("Delete file exception: {}", e.getMessage());
+        }
+    }
+
+    private void deleteFile(File file) throws IOException {
+        File[] content = file.listFiles();
+        if (content != null) {
+            for(File f : content) {
+                deleteFile(f);
+            }
+        }
+        Files.delete(file.toPath());
+    }
+
+    private void sendFileProcess(ChannelHandlerContext ctx, String path) {
         File file = new File(path);
         try (FileInputStream is = new FileInputStream(file)) {
             byte[] buffer = new byte[is.available()];
@@ -123,7 +147,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(dto.getPath(), dto.getOwner())));
     }
 
-    private Map<ParameterType, Object> getUserFiles(String currentDir, User user) {
+    private Map<ParameterType, Object> getUserFiles(String current, User user) {
 
         Map<ParameterType, Object> parameters = new HashMap<>();
 
@@ -131,7 +155,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         List<String> files = new ArrayList<>();
 
         try {
-            Files.walkFileTree(Paths.get(getPathToUserFile(currentDir, user)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
+            Files.walkFileTree(Paths.get(getPathToUserFile(current, user)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     if (file.toFile().isDirectory()) {
@@ -146,15 +170,15 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
             log.error("walkFileTree exception: {}", e.getMessage());
         }
 
-        List<String> current = new ArrayList<>();
-        current.add("root");
-        if (!currentDir.equals("root")) {
-            Arrays.stream(currentDir.split("/")).filter(str -> !str.isEmpty()).forEach(current::add);
+        List<String> currentPath = new ArrayList<>();
+        currentPath.add("root");
+        if (!current.equals("root")) {
+            Arrays.stream(current.split("/")).filter(str -> !str.isEmpty()).forEach(currentPath::add);
         }
 
         parameters.put(ParameterType.DIRECTORIES, directories);
         parameters.put(ParameterType.FILES, files);
-        parameters.put(ParameterType.CURRENT_DIR, current);
+        parameters.put(ParameterType.CURRENT, currentPath);
 
         return parameters;
     }

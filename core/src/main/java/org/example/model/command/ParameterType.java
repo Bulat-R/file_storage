@@ -5,7 +5,7 @@ public enum ParameterType {
     FILES,
     USER,
     CONTENT_ACTION,
-    CURRENT_DIR,
+    CURRENT,
     MESSAGE,
     FILE_DTO,
     NEW_NAME

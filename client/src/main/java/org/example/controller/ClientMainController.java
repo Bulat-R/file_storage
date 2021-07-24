@@ -99,6 +99,7 @@ public class ClientMainController {
                         refreshClientContent(command);
                         break;
                     case FILE_UPLOAD_OK:
+                    case DELETE_OK:
                         Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
                         break;
                     case ERROR:
@@ -137,6 +138,7 @@ public class ClientMainController {
                     log.error("Corrupted file delete exception: {}", e.getMessage());
                 }
             }
+            showAlertWindow("File saved succsessful", Alert.AlertType.INFORMATION);
         }
     }
 
@@ -212,7 +214,7 @@ public class ClientMainController {
         Command command = new Command(CommandType.CONTENT_REQUEST)
                 .setParameter(ParameterType.CONTENT_ACTION, actionType)
                 .setParameter(ParameterType.USER, Config.getUser())
-                .setParameter(ParameterType.CURRENT_DIR, currentDir);
+                .setParameter(ParameterType.CURRENT, currentDir);
         switch (actionType) {
             case DELETE:
                 Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
@@ -273,7 +275,7 @@ public class ClientMainController {
             filesTilePane.getChildren().clear();
             pathHBox.getChildren().clear();
         });
-        List<String> fullPath = (List<String>) command.getParameter(ParameterType.CURRENT_DIR);
+        List<String> fullPath = (List<String>) command.getParameter(ParameterType.CURRENT);
         List<String> directories = (List<String>) command.getParameter(ParameterType.DIRECTORIES);
         List<String> files = (List<String>) command.getParameter(ParameterType.FILES);
 
