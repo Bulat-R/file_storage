@@ -1,15 +1,11 @@
 package org.example.model.command;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
 import lombok.ToString;
 
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 
-//@AllArgsConstructor
-//@Getter
 @ToString
 public class Command implements Serializable {
     private final CommandType commandType;
@@ -24,16 +20,16 @@ public class Command implements Serializable {
         return commandType;
     }
 
-    public Object getParameter(ParameterType type){
+    public Object getParameter(ParameterType type) {
         return parameters.getOrDefault(type, null);
     }
 
-    public Command setParameter(ParameterType type, Object o){
+    public Command setParameter(ParameterType type, Object o) {
         parameters.put(type, o);
         return this;
     }
 
-    public Command setAll(Map<ParameterType, Object> parameters){
+    public Command setAll(Map<ParameterType, Object> parameters) {
         this.parameters.putAll(parameters);
         return this;
     }

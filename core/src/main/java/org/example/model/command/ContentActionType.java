@@ -1,7 +1,10 @@
 package org.example.model.command;
 
 public enum ContentActionType {
-    OPEN("open"), DELETE("delete"), RENAME("rename"), DOWNLOAD("download");
+    OPEN("open"),
+    DELETE("delete"),
+    RENAME("rename"),
+    DOWNLOAD("download");
 
     private final String value;
 

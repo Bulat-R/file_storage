@@ -32,14 +32,10 @@ import org.example.model.command.ParameterType;
 import org.example.model.dto.FileDTO;
 import org.example.netty.NettyNetwork;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.ConnectException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -83,7 +79,6 @@ public class ClientMainController {
     private void connectionProcess() {
         try {
             showConnectionWindow();
-
             network = new NettyNetwork(command -> {
                 log.info("Command received: {}", command);
                 switch (command.getCommandType()) {
@@ -109,17 +104,40 @@ public class ClientMainController {
                     case ERROR:
                         Platform.runLater(() -> showAlertWindow((String) command.getParameter(ParameterType.MESSAGE), Alert.AlertType.ERROR));
                         break;
-
+                    case FILE_DOWNLOAD:
+                        Platform.runLater(() -> downloadFileSave(command));
+                        break;
                 }
             }, Config.getHost(), Config.getPort());
-
             authRequest();
-
         } catch (Exception e) {
             log.error("ConnectionProcess exception: {}", e.getMessage());
         }
-
         runConnectionInspector();
+    }
+
+    private void downloadFileSave(Command command) {
+        FileDTO dto = (FileDTO) command.getParameter(ParameterType.FILE_DTO);
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
+        fileChooser.setTitle("Save file");
+        fileChooser.setInitialFileName(dto.getName());
+        File file = fileChooser.showSaveDialog(mainPane.getScene().getWindow());
+        if (file != null) {
+            try (FileOutputStream os = new FileOutputStream(file)) {
+                os.write(dto.getContent());
+            } catch (IOException e) {
+                log.error("File save exception: {}", e.getMessage());
+            }
+            if (file.length() != dto.getSize() || !dto.getMd5().equals(getFileChecksum(file))) {
+                showAlertWindow("File is corrupted", Alert.AlertType.ERROR);
+                try {
+                    Files.deleteIfExists(file.toPath());
+                } catch (IOException e) {
+                    log.error("Corrupted file delete exception: {}", e.getMessage());
+                }
+            }
+        }
     }
 
     private void disconnectionProcess() {
@@ -155,7 +173,6 @@ public class ClientMainController {
                                         .md5(md5)
                                         .build())
                 );
-
             } catch (Exception e) {
                 log.error("UploadProcess exception: {}", e.getMessage());
             }
@@ -219,10 +236,6 @@ public class ClientMainController {
                 }
                 break;
             case DOWNLOAD:
-//                DirectoryChooser directoryChooser = new DirectoryChooser();
-//                directoryChooser.setTitle("Choose directory for download");
-//                directoryChooser.setInitialDirectory(new File(System.getProperty("user.home")));
-//                File destinationDir = directoryChooser.showDialog(mainPane.getScene().getWindow());
                 break;
         }
         try {
@@ -368,18 +381,15 @@ public class ClientMainController {
                 event.consume();
             }
         });
-
         for (ContentActionType actionType : actionTypes) {
             MenuItem item = new MenuItem(actionType.getValue());
             item.setId(actionType.getValue());
             menu.getItems().add(item);
         }
-
         label.setOnContextMenuRequested(event -> menu.show(filesTilePane, event.getScreenX() - 5, event.getScreenY() - 5));
 
         label.setOnMouseEntered(event -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color," +
                 "-fx-outer-border, -fx-inner-border, -fx-body-color;"));
-
         label.setOnMouseExited(event -> {
             if (menu.isShowing()) {
                 menu.hide();

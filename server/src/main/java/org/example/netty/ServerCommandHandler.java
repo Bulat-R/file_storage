@@ -2,6 +2,7 @@ package org.example.netty;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import javafx.scene.control.Label;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.example.model.command.Command;
@@ -12,10 +13,7 @@ import org.example.model.dto.FileDTO;
 import org.example.model.user.User;
 import org.example.service.UserService;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
@@ -49,10 +47,11 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
                     case OPEN:
                         ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(currentDir, user)));
                         break;
-                    case RENAME:
-
-                    case DELETE:
                     case DOWNLOAD:
+                        sendFileProcess(ctx, path, user);
+                        break;
+                    case DELETE:
+                    case RENAME:
                         sendErrorMessage(ctx, "METHOD NOT YET REALISED");
                         break;
                 }
@@ -60,6 +59,27 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
             case FILE_UPLOAD:
                 uploadFileProcess(ctx, command);
                 break;
+        }
+    }
+
+    private void sendFileProcess(ChannelHandlerContext ctx, String path, User user) {
+        File file = new File(path);
+        try (FileInputStream is = new FileInputStream(file)) {
+            byte[] buffer = new byte[is.available()];
+            int size = is.read(buffer);
+            String md5 = getFileChecksum(file);
+
+            ctx.writeAndFlush(new Command(CommandType.FILE_DOWNLOAD)
+                    .setParameter(ParameterType.FILE_DTO,
+                            FileDTO.builder()
+                                    .name(file.getName())
+                                    .content(buffer)
+                                    .size((long) size)
+                                    .md5(md5)
+                                    .build())
+            );
+        } catch (Exception e) {
+            log.error("Send file exception: {}", e.getMessage());
         }
     }
 
