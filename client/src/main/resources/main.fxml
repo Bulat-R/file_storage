@@ -29,7 +29,7 @@
                               <Font size="12.0" />
                            </font>
                         </Button>
-                        <Button disable="true" maxHeight="30.0" maxWidth="150.0" minHeight="30.0" minWidth="150.0" mnemonicParsing="false" prefHeight="30.0" prefWidth="150.0" text="Create directory">
+                        <Button fx:id="createButton" disable="true" focusTraversable="false" maxHeight="30.0" maxWidth="150.0" minHeight="30.0" minWidth="150.0" mnemonicParsing="false" onAction="#createDir" prefHeight="30.0" prefWidth="150.0" text="Create directory">
                            <font>
                               <Font size="12.0" />
                            </font>

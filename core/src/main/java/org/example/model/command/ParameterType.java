@@ -8,5 +8,6 @@ public enum ParameterType {
     CURRENT,
     MESSAGE,
     FILE_DTO,
-    NEW_NAME
+    NEW_NAME,
+    DIR_NAME
 }

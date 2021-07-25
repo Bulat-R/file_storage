@@ -63,11 +63,27 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
                 case FILE_UPLOAD:
                     uploadFileProcess(ctx, command);
                     break;
+                case CREATE_DIR:
+                    createDir(ctx, command);
+                    break;
             }
         } catch (Exception e) {
             log.error("Channel read exception: {}", e.getMessage(), e);
             sendErrorMessage(ctx, "Unknown server error");
         }
+    }
+
+    private void createDir(ChannelHandlerContext ctx, Command command) throws IOException {
+        String current = (String) command.getParameter(ParameterType.CURRENT);
+        String path = getPathToCurrent(current, (User) command.getParameter(ParameterType.USER));
+        File dir = new File(path + File.separator + command.getParameter(ParameterType.DIR_NAME));
+        if (Files.exists(dir.toPath()) && Files.isDirectory(dir.toPath())) {
+            sendErrorMessage(ctx, dir.getName() + " already exists");
+            return;
+        }
+        Files.createDirectory(dir.toPath());
+        ctx.writeAndFlush(new Command(CommandType.CREATE_OK));
+        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current, (User) command.getParameter(ParameterType.USER))));
     }
 
     private void renameProcess(ChannelHandlerContext ctx, String path, String newName) throws IOException {

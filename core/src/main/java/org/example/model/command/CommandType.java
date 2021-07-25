@@ -10,5 +10,7 @@ public enum CommandType {
     FILE_UPLOAD_OK,
     FILE_DOWNLOAD,
     DELETE_OK,
-    RENAME_OK
+    RENAME_OK,
+    CREATE_DIR,
+    CREATE_OK
 }

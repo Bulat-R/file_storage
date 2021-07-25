@@ -55,6 +55,8 @@ public class ClientMainController {
     private TilePane filesTilePane;
     @FXML
     private AnchorPane mainPane;
+    @FXML
+    private Button createButton;
     private NettyNetwork network;
     private boolean isManualDisconnect;
 
@@ -71,8 +73,26 @@ public class ClientMainController {
 
     @FXML
     private void upload() {
-        if (network.isConnected()) {
-            uploadProcess();
+        uploadProcess();
+    }
+
+    @FXML
+    private void createDir() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Create directory");
+        dialog.setHeaderText("Enter directory name");
+        Optional<String> name = dialog.showAndWait();
+        if (name.isPresent() && isValidName(name.get())) {
+            Label last = (Label) pathHBox.getChildren().get(pathHBox.getChildren().size() - 1);
+            Command command = new Command(CommandType.CREATE_DIR)
+                    .setParameter(ParameterType.DIR_NAME, name.get())
+                    .setParameter(ParameterType.USER, Config.getUser())
+                    .setParameter(ParameterType.CURRENT, getFullPath(last));
+            try {
+                network.writeMessage(command);
+            } catch (ConnectException e) {
+                log.error("Create directory exception: {}", e.getMessage(), e);
+            }
         }
     }
 
@@ -89,12 +109,11 @@ public class ClientMainController {
                             filesTilePane.setAlignment(Pos.TOP_LEFT);
                             filesTilePane.getChildren().clear();
                             uploadButton.setDisable(false);
+                            createButton.setDisable(false);
                         });
                         break;
                     case AUTH_NO:
-                        Platform.runLater(() -> {
-                            showAlertWindow("Bad credentials", Alert.AlertType.ERROR);
-                        });
+                        Platform.runLater(() -> showAlertWindow("Bad credentials", Alert.AlertType.ERROR));
                         network.close();
                         break;
                     case CONTENT_RESPONSE:
@@ -103,6 +122,7 @@ public class ClientMainController {
                     case FILE_UPLOAD_OK:
                     case DELETE_OK:
                     case RENAME_OK:
+                    case CREATE_OK:
                         Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
                         break;
                     case ERROR:
@@ -141,7 +161,7 @@ public class ClientMainController {
                     log.error("Corrupted file delete exception: {}", e.getMessage());
                 }
             }
-            showAlertWindow("File saved succsessful", Alert.AlertType.INFORMATION);
+            showAlertWindow("File saved successful", Alert.AlertType.INFORMATION);
         }
     }
 
@@ -153,6 +173,7 @@ public class ClientMainController {
         connectButton.setText("Connect");
         pathHBox.getChildren().clear();
         uploadButton.setDisable(true);
+        createButton.setDisable(true);
         network.close();
     }
 
@@ -213,11 +234,11 @@ public class ClientMainController {
         alert.showAndWait();
     }
 
-    private void contentRequest(String currentDir, ContentActionType actionType) {
+    private void contentRequest(String curren, ContentActionType actionType) {
         Command command = new Command(CommandType.CONTENT_REQUEST)
                 .setParameter(ParameterType.CONTENT_ACTION, actionType)
                 .setParameter(ParameterType.USER, Config.getUser())
-                .setParameter(ParameterType.CURRENT, currentDir);
+                .setParameter(ParameterType.CURRENT, curren);
         switch (actionType) {
             case DELETE:
                 Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
@@ -229,7 +250,7 @@ public class ClientMainController {
                 }
                 break;
             case RENAME:
-                String oldName = currentDir.substring(currentDir.lastIndexOf("/") + 1);
+                String oldName = curren.substring(curren.lastIndexOf("/") + 1);
                 TextInputDialog dialog = new TextInputDialog(oldName);
                 dialog.setTitle("Rename");
                 dialog.setHeaderText("Enter new name");
@@ -253,6 +274,10 @@ public class ClientMainController {
 
     private boolean isValidName(String s) {
         if (s.trim().isEmpty()) {
+            return false;
+        }
+        if (s.trim().equalsIgnoreCase("root")) {
+            showAlertWindow("Forbidden name", Alert.AlertType.ERROR);
             return false;
         }
         for (char ch : Config.getForbidden()) {
