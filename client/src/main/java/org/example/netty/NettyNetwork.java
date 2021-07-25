@@ -19,14 +19,12 @@ import java.util.concurrent.CountDownLatch;
 @Slf4j
 public class NettyNetwork {
 
-    private final CallBack callBack;
     private SocketChannel channel;
     EventLoopGroup worker;
 
     public NettyNetwork(CallBack callBack, String host, int port) throws Exception {
         CountDownLatch countDownLatch = new CountDownLatch(1);
         log.info("NettyNetwork constructor started: host {}, port {}", host, port);
-        this.callBack = callBack;
         Thread thread = new Thread(() -> {
             worker = new NioEventLoopGroup();
             try {
@@ -35,7 +33,7 @@ public class NettyNetwork {
                         .channel(NioSocketChannel.class)
                         .handler(new ChannelInitializer<SocketChannel>() {
                             @Override
-                            protected void initChannel(SocketChannel c) throws Exception {
+                            protected void initChannel(SocketChannel c) {
                                 channel = c;
                                 c.pipeline().addLast(
                                         new ObjectEncoder(),

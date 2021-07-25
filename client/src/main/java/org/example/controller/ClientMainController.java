@@ -183,11 +183,15 @@ public class ClientMainController {
         fileChooser.setTitle("Choose upload file");
         File file = fileChooser.showOpenDialog(mainPane.getScene().getWindow());
         if (file != null) {
+            long size = file.length();
+            if (size > Integer.MAX_VALUE - 10_000_000) {
+                showAlertWindow("File size is too large", Alert.AlertType.ERROR);
+                return;
+            }
             try (FileInputStream is = new FileInputStream(file)) {
-                byte[] buffer = new byte[is.available()];
-                int size = is.read(buffer);
+                byte[] buffer = new byte[(int) size];
+                is.read(buffer);
                 String md5 = getFileChecksum(file);
-
                 network.writeMessage(new Command(CommandType.FILE_UPLOAD)
                         .setParameter(ParameterType.FILE_DTO,
                                 FileDTO.builder()
@@ -195,12 +199,12 @@ public class ClientMainController {
                                         .name(file.getName())
                                         .path(getFullPath(new Label()))
                                         .content(buffer)
-                                        .size((long) size)
+                                        .size(size)
                                         .md5(md5)
                                         .build())
                 );
             } catch (Exception e) {
-                log.error("UploadProcess exception: {}", e.getMessage());
+                log.error("UploadProcess exception: {}", e.getMessage(), e);
             }
         }
     }
