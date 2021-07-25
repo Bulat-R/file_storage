@@ -1,13 +1,19 @@
 package org.example.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.example.model.user.User;
+import org.example.netty.Config;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 public class InMemoryUserService implements UserService {
 
-    private Map<String, User> users = new HashMap<>();
+    private final Map<String, User> users = new HashMap<>();
 
     {
         users.put("12345@email.com", User.builder().email("12345@email.com").password("12345").build());
@@ -26,7 +32,17 @@ public class InMemoryUserService implements UserService {
     }
 
     @Override
-    public String getRootPath(User user) {
-        return System.getProperty("user.home");
+    public String getRootPath(User user) throws IOException {
+        File file = new File(Config.storagePath + File.separator + user.getEmail());
+        try {
+            if (Files.notExists(file.toPath())) {
+                Files.createDirectory(file.toPath());
+                log.info("Folder for user {} created at {}", user.getEmail(), file.getAbsolutePath());
+            }
+        } catch (IOException e) {
+            log.error("User folder create exception: {}", e.getMessage(), e);
+            throw new IOException(e);
+        }
+        return file.getAbsolutePath();
     }
 }

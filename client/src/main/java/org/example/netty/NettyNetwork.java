@@ -39,7 +39,7 @@ public class NettyNetwork {
                                 channel = c;
                                 c.pipeline().addLast(
                                         new ObjectEncoder(),
-                                        new ObjectDecoder(ClassResolvers.cacheDisabled(null)),
+                                        new ObjectDecoder(Integer.MAX_VALUE, ClassResolvers.cacheDisabled(null)),
                                         new ClientCommandHandler(callBack)
                                 );
                             }

@@ -16,7 +16,7 @@ import org.example.service.InMemoryUserService;
 @Slf4j
 public class Server {
 
-    public Server() {
+    public Server(int port) {
         EventLoopGroup auth = new NioEventLoopGroup(1);
         EventLoopGroup worker = new NioEventLoopGroup();
         try {
@@ -28,16 +28,16 @@ public class Server {
                         protected void initChannel(SocketChannel channel) throws Exception {
                             channel.pipeline().addLast(
                                     new ObjectEncoder(),
-                                    new ObjectDecoder(ClassResolvers.cacheDisabled(null)),
+                                    new ObjectDecoder(Integer.MAX_VALUE, ClassResolvers.cacheDisabled(null)),
                                     new ServerCommandHandler(new InMemoryUserService())
                             );
                         }
                     });
-            ChannelFuture channelFuture = serverBootstrap.bind(8888).sync();
-            log.info("=============== Server started ===============");
+            ChannelFuture channelFuture = serverBootstrap.bind(port).sync();
+            log.info("=================== Server started (port {}) ===================", port);
             channelFuture.channel().closeFuture().sync();
         } catch (Exception e) {
-            log.error("Server constructor exception: {}", e.getMessage());
+            log.error("Server start exception: {}", e.getMessage(), e);
         } finally {
             auth.shutdownGracefully();
             worker.shutdownGracefully();

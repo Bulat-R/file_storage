@@ -92,7 +92,9 @@ public class ClientMainController {
                         });
                         break;
                     case AUTH_NO:
-                        Platform.runLater(() -> showAlertWindow("Bad credentials", Alert.AlertType.ERROR));
+                        Platform.runLater(() -> {
+                            showAlertWindow("Bad credentials", Alert.AlertType.ERROR);
+                        });
                         network.close();
                         break;
                     case CONTENT_RESPONSE:
@@ -321,13 +323,12 @@ public class ClientMainController {
     private void addElementToPane(String name, Boolean isDirectory) {
         Label label = new Label(name);
         label.setPickOnBounds(true);
-        label.setMinSize(60, 80);
-        label.setMaxSize(60, 80);
+        label.setMinSize(60, 100);
+        label.setMaxSize(60, 100);
         label.setContentDisplay(ContentDisplay.TOP);
         label.setTextAlignment(TextAlignment.CENTER);
         label.setAlignment(Pos.TOP_CENTER);
         label.setFont(new Font(10));
-        label.setWrapText(true);
         Image image;
         if (isDirectory) {
             image = new Image("dir.png");
@@ -391,14 +392,17 @@ public class ClientMainController {
         }
         label.setOnContextMenuRequested(event -> menu.show(filesTilePane, event.getScreenX() - 5, event.getScreenY() - 5));
 
-        label.setOnMouseEntered(event -> label.setStyle("-fx-background-color: -fx-shadow-highlight-color," +
-                "-fx-outer-border, -fx-inner-border, -fx-body-color;"));
+        label.setOnMouseEntered(event -> {
+            label.setStyle("-fx-background-color: -fx-shadow-highlight-color," +
+                    "-fx-outer-border, -fx-inner-border, -fx-body-color;");
+            label.setWrapText(true);
+        });
         label.setOnMouseExited(event -> {
             if (menu.isShowing()) {
                 menu.hide();
             }
             label.setStyle("-fx-background-color: transparent;");
-            event.consume();
+            label.setWrapText(false);
         });
     }
 }

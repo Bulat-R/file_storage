@@ -28,62 +28,62 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Command command) {
-        User user = (User) command.getParameter(ParameterType.USER);
-        log.info("Command received: {}", command);
-        switch (command.getCommandType()) {
-            case AUTH_REQUEST:
-                userAuthProcess(ctx, user);
-                break;
-            case CONTENT_REQUEST:
-                ContentActionType type = (ContentActionType) command.getParameter(ParameterType.CONTENT_ACTION);
-                String current = (String) command.getParameter(ParameterType.CURRENT);
-                String path = getPathToCurrent(current, user);
-                if (!Files.exists(Paths.get(path))) {
-                    sendErrorMessage(ctx, "NOT FOUND");
-                    return;
-                }
-                switch (type) {
-                    case OPEN:
-                        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current, user)));
-                        break;
-                    case DOWNLOAD:
-                        sendFileProcess(ctx, path);
-                        break;
-                    case DELETE:
-                        deleteProcess(ctx, path);
-                        log.info(current.substring(0, current.lastIndexOf("/")));
-                        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")), user)));
-                        break;
-                    case RENAME:
-                        renameProcess(ctx, path, (String) command.getParameter(ParameterType.NEW_NAME));
-                        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")), user)));
-                        break;
-                }
-                break;
-            case FILE_UPLOAD:
-                uploadFileProcess(ctx, command);
-                break;
+        try {
+            User user = (User) command.getParameter(ParameterType.USER);
+            log.info("Command received: {}", command);
+            switch (command.getCommandType()) {
+                case AUTH_REQUEST:
+                    userAuthProcess(ctx, user);
+                    break;
+                case CONTENT_REQUEST:
+                    ContentActionType type = (ContentActionType) command.getParameter(ParameterType.CONTENT_ACTION);
+                    String current = (String) command.getParameter(ParameterType.CURRENT);
+                    String path = getPathToCurrent(current, user);
+                    if (!Files.exists(Paths.get(path))) {
+                        sendErrorMessage(ctx, "NOT FOUND");
+                        return;
+                    }
+                    switch (type) {
+                        case OPEN:
+                            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current, user)));
+                            break;
+                        case DOWNLOAD:
+                            sendFileProcess(ctx, path);
+                            break;
+                        case DELETE:
+                            deleteProcess(ctx, path);
+                            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")), user)));
+                            break;
+                        case RENAME:
+                            renameProcess(ctx, path, (String) command.getParameter(ParameterType.NEW_NAME));
+                            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")), user)));
+                            break;
+                    }
+                    break;
+                case FILE_UPLOAD:
+                    uploadFileProcess(ctx, command);
+                    break;
+            }
+        } catch (Exception e) {
+            log.error("Channel read exception: {}", e.getMessage(), e);
+            sendErrorMessage(ctx, "Unknown server error");
         }
     }
 
-    private void renameProcess(ChannelHandlerContext ctx, String path, String newName) {
-        try {
-            File src = new File(path);
-            File dst = new File(src.getParent() + File.separator + newName);
-            if (dst.exists()) {
-                ctx.writeAndFlush(new Command(CommandType.ERROR).setParameter(ParameterType.MESSAGE, newName + " already exists"));
-                return;
-            }
-            if (src.isFile()) {
-                Files.move(src.toPath(), dst.toPath());
-            } else if (src.isDirectory()) {
-                moveDirectory(src, dst);
-                deleteFile(src);
-            }
-            ctx.writeAndFlush(new Command(CommandType.RENAME_OK));
-        } catch (IOException e) {
-            log.error("Rename file exception: {}", e.getMessage(), e);
+    private void renameProcess(ChannelHandlerContext ctx, String path, String newName) throws IOException {
+        File src = new File(path);
+        File dst = new File(src.getParent() + File.separator + newName);
+        if (dst.exists()) {
+            ctx.writeAndFlush(new Command(CommandType.ERROR).setParameter(ParameterType.MESSAGE, newName + " already exists"));
+            return;
         }
+        if (src.isFile()) {
+            Files.move(src.toPath(), dst.toPath());
+        } else if (src.isDirectory()) {
+            moveDirectory(src, dst);
+            deleteFile(src);
+        }
+        ctx.writeAndFlush(new Command(CommandType.RENAME_OK));
     }
 
     private void moveDirectory(File src, File dst) throws IOException {
@@ -98,14 +98,10 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
     }
 
-    private void deleteProcess(ChannelHandlerContext ctx, String path) {
+    private void deleteProcess(ChannelHandlerContext ctx, String path) throws IOException {
         File file = new File(path);
-        try {
-            deleteFile(file);
-            ctx.writeAndFlush(new Command(CommandType.DELETE_OK));
-        } catch (IOException e) {
-            log.error("Delete file exception: {}", e.getMessage(), e);
-        }
+        deleteFile(file);
+        ctx.writeAndFlush(new Command(CommandType.DELETE_OK));
     }
 
     private void deleteFile(File file) throws IOException {
@@ -118,28 +114,24 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         Files.delete(file.toPath());
     }
 
-    private void sendFileProcess(ChannelHandlerContext ctx, String path) {
+    private void sendFileProcess(ChannelHandlerContext ctx, String path) throws IOException {
         File file = new File(path);
-        try (FileInputStream is = new FileInputStream(file)) {
-            byte[] buffer = new byte[is.available()];
-            int size = is.read(buffer);
-            String md5 = getFileChecksum(file);
-
-            ctx.writeAndFlush(new Command(CommandType.FILE_DOWNLOAD)
-                    .setParameter(ParameterType.FILE_DTO,
-                            FileDTO.builder()
-                                    .name(file.getName())
-                                    .content(buffer)
-                                    .size((long) size)
-                                    .md5(md5)
-                                    .build())
-            );
-        } catch (Exception e) {
-            log.error("Send file exception: {}", e.getMessage(), e);
-        }
+        FileInputStream is = new FileInputStream(file);
+        byte[] buffer = new byte[is.available()];
+        int size = is.read(buffer);
+        String md5 = getFileChecksum(file);
+        ctx.writeAndFlush(new Command(CommandType.FILE_DOWNLOAD)
+                .setParameter(ParameterType.FILE_DTO,
+                        FileDTO.builder()
+                                .name(file.getName())
+                                .content(buffer)
+                                .size((long) size)
+                                .md5(md5)
+                                .build())
+        );
     }
 
-    private void userAuthProcess(ChannelHandlerContext ctx, User user) {
+    private void userAuthProcess(ChannelHandlerContext ctx, User user) throws IOException {
         if (userService.isAuthorized(user)) {
             ctx.writeAndFlush(new Command(CommandType.AUTH_OK));
             ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles("root", user)));
@@ -148,7 +140,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
     }
 
-    private void uploadFileProcess(ChannelHandlerContext ctx, Command command) {
+    private void uploadFileProcess(ChannelHandlerContext ctx, Command command) throws IOException {
         FileDTO dto = (FileDTO) command.getParameter(ParameterType.FILE_DTO);
         String fullFilePath = getPathToCurrent(dto.getPath(), dto.getOwner()) + dto.getName();
         if (Files.exists(Paths.get(fullFilePath))) {
@@ -156,43 +148,32 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
             return;
         }
         File file = new File(fullFilePath);
-        try (FileOutputStream os = new FileOutputStream(file)) {
-            os.write(dto.getContent());
-        } catch (IOException e) {
-            log.error("File write exception: {}", e.getMessage(), e);
-        }
+        FileOutputStream os = new FileOutputStream(file);
+        os.write(dto.getContent());
         if (file.length() != dto.getSize() || !dto.getMd5().equals(getFileChecksum(file))) {
             sendErrorMessage(ctx, "File is corrupted");
-            try {
-                Files.deleteIfExists(Paths.get(fullFilePath));
-            } catch (IOException e) {
-                log.error("Corrupted file delete exception: {}", e.getMessage(), e);
-            }
+            Files.deleteIfExists(Paths.get(fullFilePath));
             return;
         }
         ctx.writeAndFlush(new Command(CommandType.FILE_UPLOAD_OK));
         ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(dto.getPath(), dto.getOwner())));
     }
 
-    private Map<ParameterType, Object> getUserFiles(String current, User user) {
+    private Map<ParameterType, Object> getUserFiles(String current, User user) throws IOException {
         Map<ParameterType, Object> parameters = new HashMap<>();
         List<String> directories = new ArrayList<>();
         List<String> files = new ArrayList<>();
-        try {
-            Files.walkFileTree(Paths.get(getPathToCurrent(current, user)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    if (file.toFile().isDirectory()) {
-                        directories.add(file.getFileName().toString());
-                    } else if (file.toFile().isFile()) {
-                        files.add(file.getFileName().toString());
-                    }
-                    return super.visitFile(file, attrs);
+        Files.walkFileTree(Paths.get(getPathToCurrent(current, user)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                if (file.toFile().isDirectory()) {
+                    directories.add(file.getFileName().toString());
+                } else if (file.toFile().isFile()) {
+                    files.add(file.getFileName().toString());
                 }
-            });
-        } catch (IOException e) {
-            log.error("walkFileTree exception: {}", e.getMessage(), e);
-        }
+                return super.visitFile(file, attrs);
+            }
+        });
         List<String> currentPath = new ArrayList<>();
         currentPath.add("root");
         if (!current.equals("root")) {
@@ -204,25 +185,22 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         return parameters;
     }
 
-    private String getPathToCurrent(String currentDir, User user) {
-        String separator = File.separator;
+    private String getPathToCurrent(String current, User user) throws IOException {
         StringBuilder sb = new StringBuilder(userService.getRootPath(user));
-        if (!currentDir.equals("root") && !currentDir.equals("/")) {
-            String[] dirs = currentDir.split("/");
+        sb.append(File.separator);
+        if (!current.equals("root") && !current.equals("/")) {
+            String[] dirs = current.split("/");
             for (String dir : dirs) {
-                sb.append(dir).append(separator);
+                sb.append(dir).append(File.separator);
             }
         }
         return sb.toString();
     }
 
-    private String getFileChecksum(File file) {
+    private String getFileChecksum(File file) throws IOException {
         String md5 = "";
-        try (InputStream is = Files.newInputStream(Paths.get(file.toURI()))) {
-            md5 = DigestUtils.md5Hex(is);
-        } catch (Exception e) {
-            log.error("File checkSum exception: {}", e.getMessage());
-        }
+        InputStream is = Files.newInputStream(Paths.get(file.toURI()));
+        md5 = DigestUtils.md5Hex(is);
         return md5;
     }
 
