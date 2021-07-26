@@ -6,8 +6,10 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.stage.Stage;
+import lombok.extern.slf4j.Slf4j;
 import org.example.controller.ClientMainController;
 
+@Slf4j
 public class ClientRunner extends Application {
 
     @Override
@@ -19,6 +21,7 @@ public class ClientRunner extends Application {
         primaryStage.setOnCloseRequest(event -> {
             ((ClientMainController) loader.getController()).closeConnection();
             primaryStage.close();
+            log.info("Client closed");
         });
         primaryStage.getIcons().add(new Image(getClass().getClassLoader().getResourceAsStream("client1.png")));
         primaryStage.setMinWidth(600);

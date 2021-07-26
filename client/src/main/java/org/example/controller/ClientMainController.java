@@ -110,6 +110,7 @@ public class ClientMainController {
                             filesTilePane.getChildren().clear();
                             uploadButton.setDisable(false);
                             createButton.setDisable(false);
+                            runConnectionInspector();
                         });
                         break;
                     case AUTH_NO:
@@ -135,9 +136,8 @@ public class ClientMainController {
             }, Config.getHost(), Config.getPort());
             authRequest();
         } catch (Exception e) {
-            log.error("ConnectionProcess exception: {}", e.getMessage());
+            log.error("ConnectionProcess exception: {}", e.getMessage(), e);
         }
-        runConnectionInspector();
     }
 
     private void downloadFileSave(Command command) {
@@ -151,14 +151,14 @@ public class ClientMainController {
             try (FileOutputStream os = new FileOutputStream(file)) {
                 os.write(dto.getContent());
             } catch (IOException e) {
-                log.error("File save exception: {}", e.getMessage());
+                log.error("File save exception: {}", e.getMessage(), e);
             }
             if (file.length() != dto.getSize() || !dto.getMd5().equals(getFileChecksum(file))) {
                 showAlertWindow("File is corrupted", Alert.AlertType.ERROR);
                 try {
                     Files.deleteIfExists(file.toPath());
                 } catch (IOException e) {
-                    log.error("Corrupted file delete exception: {}", e.getMessage());
+                    log.error("Corrupted file delete exception: {}", e.getMessage(), e);
                 }
             }
             showAlertWindow("File saved successful", Alert.AlertType.INFORMATION);
@@ -214,7 +214,7 @@ public class ClientMainController {
         try (InputStream is = Files.newInputStream(Paths.get(file.toURI()))) {
             md5 = DigestUtils.md5Hex(is);
         } catch (Exception e) {
-            log.error("File checkSum exception: {}", e.getMessage());
+            log.error("File checkSum exception: {}", e.getMessage(), e);
         }
         return md5;
     }
@@ -271,7 +271,7 @@ public class ClientMainController {
         try {
             network.writeMessage(command);
         } catch (Exception e) {
-            log.error("Content request exception: {}", e.getMessage());
+            log.error("Content request exception: {}", e.getMessage(), e);
             showAlertWindow(e.getMessage(), Alert.AlertType.ERROR);
         }
     }
@@ -297,7 +297,8 @@ public class ClientMainController {
         try {
             network.writeMessage(new Command(CommandType.AUTH_REQUEST).setParameter(ParameterType.USER, Config.getUser()));
         } catch (ConnectException e) {
-            log.error("Connection exception: {}", e.getMessage());
+            log.error("Connection exception: {}", e.getMessage(), e);
+            showAlertWindow("No connection", Alert.AlertType.ERROR);
         }
     }
 
