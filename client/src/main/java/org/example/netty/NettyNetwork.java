@@ -46,7 +46,7 @@ public class NettyNetwork {
                 countDownLatch.countDown();
                 future.channel().closeFuture().sync();
             } catch (Exception e) {
-                log.error("NettyNetwork constructor exception: {}", e.getMessage());
+                log.error("NettyNetwork constructor exception: {}", e.getMessage(), e);
                 countDownLatch.countDown();
             } finally {
                 worker.shutdownGracefully();

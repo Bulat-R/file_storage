@@ -59,6 +59,7 @@ public class ClientMainController {
     private Button createButton;
     private NettyNetwork network;
     private boolean isManualDisconnect;
+    private boolean isConnectWindowClosed;
 
     @FXML
     private void connectionButtonHandling() {
@@ -99,42 +100,42 @@ public class ClientMainController {
     private void connectionProcess() {
         try {
             showConnectionWindow();
-            network = new NettyNetwork(command -> {
-                log.info("Command received: {}", command);
-                switch (command.getCommandType()) {
-                    case AUTH_OK:
-                        Platform.runLater(() -> {
-                            connectButton.setText("Disconnect");
-                            emailLabel.setText(Config.getUser().getEmail());
-                            filesTilePane.setAlignment(Pos.TOP_LEFT);
-                            filesTilePane.getChildren().clear();
-                            uploadButton.setDisable(false);
-                            createButton.setDisable(false);
-                            runConnectionInspector();
-                        });
-                        break;
-                    case AUTH_NO:
-                        Platform.runLater(() -> showAlertWindow("Bad credentials", Alert.AlertType.ERROR));
-                        network.close();
-                        break;
-                    case CONTENT_RESPONSE:
-                        refreshClientContent(command);
-                        break;
-                    case FILE_UPLOAD_OK:
-                    case DELETE_OK:
-                    case RENAME_OK:
-                    case CREATE_OK:
-                        Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
-                        break;
-                    case ERROR:
-                        Platform.runLater(() -> showAlertWindow((String) command.getParameter(ParameterType.MESSAGE), Alert.AlertType.ERROR));
-                        break;
-                    case FILE_DOWNLOAD:
-                        Platform.runLater(() -> downloadFileSave(command));
-                        break;
-                }
-            }, Config.getHost(), Config.getPort());
-            if (network.isConnected()) {
+            if (!isConnectWindowClosed) {
+                network = new NettyNetwork(command -> {
+                    log.info("Command received: {}", command);
+                    switch (command.getCommandType()) {
+                        case AUTH_OK:
+                            Platform.runLater(() -> {
+                                connectButton.setText("Disconnect");
+                                emailLabel.setText(Config.getUser().getEmail());
+                                filesTilePane.setAlignment(Pos.TOP_LEFT);
+                                filesTilePane.getChildren().clear();
+                                uploadButton.setDisable(false);
+                                createButton.setDisable(false);
+                                runConnectionInspector();
+                            });
+                            break;
+                        case AUTH_NO:
+                            Platform.runLater(() -> showAlertWindow("Bad credentials", Alert.AlertType.ERROR));
+                            network.close();
+                            break;
+                        case CONTENT_RESPONSE:
+                            refreshClientContent(command);
+                            break;
+                        case FILE_UPLOAD_OK:
+                        case DELETE_OK:
+                        case RENAME_OK:
+                        case CREATE_OK:
+                            Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
+                            break;
+                        case ERROR:
+                            Platform.runLater(() -> showAlertWindow((String) command.getParameter(ParameterType.MESSAGE), Alert.AlertType.ERROR));
+                            break;
+                        case FILE_DOWNLOAD:
+                            Platform.runLater(() -> downloadFileSave(command));
+                            break;
+                    }
+                }, Config.getHost(), Config.getPort());
                 authRequest();
             }
         } catch (Exception e) {
@@ -222,11 +223,14 @@ public class ClientMainController {
     }
 
     private void showConnectionWindow() throws IOException {
+        isConnectWindowClosed = false;
         FXMLLoader loader = new FXMLLoader(getClass().getClassLoader().getResource("connection.fxml"));
         Parent parent = loader.load();
         Stage stage = new Stage();
         stage.setTitle("Connection");
-        stage.setScene(new Scene(parent));
+        Scene scene = new Scene(parent);
+        scene.setOnMouseExited(event -> Platform.runLater(() -> isConnectWindowClosed = true));
+        stage.setScene(scene);
         stage.initModality(Modality.APPLICATION_MODAL);
         stage.setResizable(false);
         stage.showAndWait();
