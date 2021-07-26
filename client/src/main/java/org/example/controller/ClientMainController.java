@@ -134,7 +134,9 @@ public class ClientMainController {
                         break;
                 }
             }, Config.getHost(), Config.getPort());
-            authRequest();
+            if (network.isConnected()) {
+                authRequest();
+            }
         } catch (Exception e) {
             log.error("ConnectionProcess exception: {}", e.getMessage(), e);
         }
