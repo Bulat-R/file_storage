@@ -28,7 +28,7 @@ public class Server {
                         protected void initChannel(SocketChannel channel) throws Exception {
                             channel.pipeline().addLast(
                                     new ObjectEncoder(),
-                                    new ObjectDecoder(Integer.MAX_VALUE, ClassResolvers.cacheDisabled(null)),
+                                    new ObjectDecoder(Config.maxObjectSize, ClassResolvers.weakCachingConcurrentResolver(null)),
                                     new ServerCommandHandler(new InMemoryUserService())
                             );
                         }

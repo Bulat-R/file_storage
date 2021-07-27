@@ -12,6 +12,7 @@ import java.util.Properties;
 public class Config {
     public static final String storagePath;
     public static final int port;
+    public static final int maxObjectSize;
 
     static {
         Properties properties = new Properties();
@@ -22,6 +23,7 @@ public class Config {
         }
         storagePath = properties.getProperty("storagePath");
         port = Integer.parseInt(properties.getProperty("port"));
+        maxObjectSize = Integer.parseInt(properties.getProperty("maxObjectSizeMB")) * 1_000_000;
 
         try {
             File file = new File(storagePath);

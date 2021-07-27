@@ -141,7 +141,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
                         FileDTO.builder()
                                 .name(file.getName())
                                 .content(buffer)
-                                .size((long) size)
+                                .fullSize((long) size)
                                 .md5(md5)
                                 .build())
         );
@@ -156,23 +156,38 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
     }
 
-    private void uploadFileProcess(ChannelHandlerContext ctx, Command command) throws IOException {
-        FileDTO dto = (FileDTO) command.getParameter(ParameterType.FILE_DTO);
-        String fullFilePath = getPathToCurrent(dto.getPath(), dto.getOwner()) + dto.getName();
-        if (Files.exists(Paths.get(fullFilePath))) {
-            sendErrorMessage(ctx, "File already exists");
-            return;
+    private void uploadFileProcess(ChannelHandlerContext ctx, Command command) {
+        try {
+            FileDTO dto = (FileDTO) command.getParameter(ParameterType.FILE_DTO);
+            String fullFilePath = getPathToCurrent(dto.getPath(), dto.getOwner()) + dto.getName();
+            File file = new File(fullFilePath);
+            if (!DigestUtils.md5Hex(dto.getContent()).equals(dto.getMd5())) {
+                ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR).setParameter(ParameterType.MESSAGE, "File is corrupted"));
+                Files.deleteIfExists(Paths.get(fullFilePath));
+                return;
+            }
+            if (Files.exists(file.toPath()) && dto.isStart()) {
+                ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR).setParameter(ParameterType.MESSAGE, file.getName() + " already exists"));
+                return;
+            }
+            FileOutputStream os = new FileOutputStream(file, true);
+            if (!dto.isEnd()) {
+                os.write(dto.getContent());
+                ctx.writeAndFlush(new Command(CommandType.NEXT_PART));
+            } else {
+                os.write(dto.getContent());
+                if (file.length() != dto.getFullSize()) {
+                    ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR).setParameter(ParameterType.MESSAGE, "File is corrupted"));
+                    Files.deleteIfExists(Paths.get(fullFilePath));
+                } else {
+                    ctx.writeAndFlush(new Command(CommandType.FILE_UPLOAD_OK));
+                    ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(dto.getPath(), dto.getOwner())));
+                }
+            }
+        } catch (IOException e) {
+            log.error("Upload file error: {}", e.getMessage(), e);
+            ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR));
         }
-        File file = new File(fullFilePath);
-        FileOutputStream os = new FileOutputStream(file);
-        os.write(dto.getContent());
-        if (file.length() != dto.getSize() || !dto.getMd5().equals(getFileChecksum(file))) {
-            sendErrorMessage(ctx, "File is corrupted");
-            Files.deleteIfExists(Paths.get(fullFilePath));
-            return;
-        }
-        ctx.writeAndFlush(new Command(CommandType.FILE_UPLOAD_OK));
-        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(dto.getPath(), dto.getOwner())));
     }
 
     private Map<ParameterType, Object> getUserFiles(String current, User user) throws IOException {
@@ -214,7 +229,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
     }
 
     private String getFileChecksum(File file) throws IOException {
-        String md5 = "";
+        String md5;
         InputStream is = Files.newInputStream(Paths.get(file.toURI()));
         md5 = DigestUtils.md5Hex(is);
         return md5;

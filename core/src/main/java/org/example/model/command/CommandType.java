@@ -12,5 +12,7 @@ public enum CommandType {
     DELETE_OK,
     RENAME_OK,
     CREATE_DIR,
-    CREATE_OK
+    CREATE_OK,
+    NEXT_PART,
+    UPLOAD_ERROR
 }
