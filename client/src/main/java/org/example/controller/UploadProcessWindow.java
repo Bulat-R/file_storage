@@ -9,9 +9,9 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
-public class ProgressBarWindow extends Stage {
+public class UploadProcessWindow extends Stage {
 
-    public ProgressBarWindow(Task<?> task) {
+    public UploadProcessWindow(Task<?> task) {
         ProgressBar progressBar = new ProgressBar();
         progressBar.progressProperty().bind(task.progressProperty());
         AnchorPane anchorPane = new AnchorPane();

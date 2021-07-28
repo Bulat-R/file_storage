@@ -16,56 +16,72 @@ import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
 
     private final UserService userService;
+    private final Semaphore semaphore;
+    private final AtomicBoolean hasError;
+    private User user;
 
     public ServerCommandHandler(UserService userService) {
         this.userService = userService;
+        semaphore = new Semaphore(1);
+        hasError = new AtomicBoolean(false);
     }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Command command) {
         try {
-            User user = (User) command.getParameter(ParameterType.USER);
             log.info("Command received: {}", command);
-            switch (command.getCommandType()) {
-                case AUTH_REQUEST:
-                    userAuthProcess(ctx, user);
-                    break;
-                case CONTENT_REQUEST:
-                    ContentActionType type = (ContentActionType) command.getParameter(ParameterType.CONTENT_ACTION);
-                    String current = (String) command.getParameter(ParameterType.CURRENT);
-                    String path = getPathToCurrent(current, user);
-                    if (!Files.exists(Paths.get(path))) {
-                        sendErrorMessage(ctx, "NOT FOUND");
-                        return;
-                    }
-                    switch (type) {
-                        case OPEN:
-                            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current, user)));
-                            break;
-                        case DOWNLOAD:
-                            sendFileProcess(ctx, path);
-                            break;
-                        case DELETE:
-                            deleteProcess(ctx, path);
-                            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")), user)));
-                            break;
-                        case RENAME:
-                            renameProcess(ctx, path, (String) command.getParameter(ParameterType.NEW_NAME));
-                            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")), user)));
-                            break;
-                    }
-                    break;
-                case FILE_UPLOAD:
-                    uploadFileProcess(ctx, command);
-                    break;
-                case CREATE_DIR:
-                    createDir(ctx, command);
-                    break;
+            if (command.getCommandType() == CommandType.AUTH_REQUEST) {
+                userAuthProcess(ctx, command);
+                return;
+            }
+            if (user != null && command.getParameter(ParameterType.USER).equals(user)) {
+                switch (command.getCommandType()) {
+                    case CONTENT_REQUEST:
+                        ContentActionType type = (ContentActionType) command.getParameter(ParameterType.CONTENT_ACTION);
+                        String current = (String) command.getParameter(ParameterType.CURRENT);
+                        String path = getPathToCurrent(current);
+                        if (!Files.exists(Paths.get(path))) {
+                            sendErrorMessage(ctx, current + " not found");
+                            return;
+                        }
+                        switch (type) {
+                            case OPEN:
+                                ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current)));
+                                break;
+                            case DOWNLOAD:
+                                downloadFileProcess(ctx, path);
+                                break;
+                            case DELETE:
+                                deleteProcess(ctx, path);
+                                ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")))));
+                                break;
+                            case RENAME:
+                                renameProcess(ctx, path, (String) command.getParameter(ParameterType.NEW_NAME));
+                                ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current.substring(0, current.lastIndexOf("/")))));
+                                break;
+                        }
+                        break;
+                    case FILE_UPLOAD:
+                        uploadFileProcess(ctx, command);
+                        break;
+                    case CREATE_DIR:
+                        createDir(ctx, command);
+                        break;
+                    case DOWNLOAD_ERROR:
+                        hasError.set(true);
+                        semaphore.release();
+                        break;
+                    case NEXT_PART:
+                        semaphore.release();
+                        break;
+                }
             }
         } catch (Exception e) {
             log.error("Channel read exception: {}", e.getMessage(), e);
@@ -73,17 +89,16 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         }
     }
 
-    private void createDir(ChannelHandlerContext ctx, Command command) throws IOException {
+    private void createDir(ChannelHandlerContext ctx, Command command) throws Exception {
         String current = (String) command.getParameter(ParameterType.CURRENT);
-        String path = getPathToCurrent(current, (User) command.getParameter(ParameterType.USER));
+        String path = getPathToCurrent(current);
         File dir = new File(path + File.separator + command.getParameter(ParameterType.DIR_NAME));
         if (Files.exists(dir.toPath()) && Files.isDirectory(dir.toPath())) {
             sendErrorMessage(ctx, dir.getName() + " already exists");
             return;
         }
         Files.createDirectory(dir.toPath());
-        ctx.writeAndFlush(new Command(CommandType.CREATE_OK));
-        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current, (User) command.getParameter(ParameterType.USER))));
+        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(current)));
     }
 
     private void renameProcess(ChannelHandlerContext ctx, String path, String newName) throws IOException {
@@ -99,13 +114,11 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
             moveDirectory(src, dst);
             deleteFile(src);
         }
-        ctx.writeAndFlush(new Command(CommandType.RENAME_OK));
     }
 
     private void moveDirectory(File src, File dst) throws IOException {
         Files.createDirectory(dst.toPath());
-        File[] files = src.listFiles();
-        for (File f : files) {
+        for (File f : src.listFiles()) {
             if (f.isFile()) {
                 Files.move(f.toPath(), new File(dst + File.separator + f.getName()).toPath());
             } else if (f.isDirectory()) {
@@ -117,7 +130,6 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
     private void deleteProcess(ChannelHandlerContext ctx, String path) throws IOException {
         File file = new File(path);
         deleteFile(file);
-        ctx.writeAndFlush(new Command(CommandType.DELETE_OK));
     }
 
     private void deleteFile(File file) throws IOException {
@@ -130,27 +142,61 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         Files.delete(file.toPath());
     }
 
-    private void sendFileProcess(ChannelHandlerContext ctx, String path) throws IOException {
+    private void downloadFileProcess(ChannelHandlerContext ctx, String path) {
+        hasError.set(false);
         File file = new File(path);
-        FileInputStream is = new FileInputStream(file);
-        byte[] buffer = new byte[is.available()];
-        int size = is.read(buffer);
-        String md5 = getFileChecksum(file);
-        ctx.writeAndFlush(new Command(CommandType.FILE_DOWNLOAD)
-                .setParameter(ParameterType.FILE_DTO,
-                        FileDTO.builder()
-                                .name(file.getName())
-                                .content(buffer)
-                                .fullSize((long) size)
-                                .md5(md5)
-                                .build())
-        );
+        if (Files.isDirectory(file.toPath())) {
+            sendErrorMessage(ctx, "Not file");
+            return;
+        }
+        downloadThreadStart(ctx, file);
     }
 
-    private void userAuthProcess(ChannelHandlerContext ctx, User user) throws IOException {
+    private void downloadThreadStart(ChannelHandlerContext ctx, File file) {
+        semaphore.release(semaphore.drainPermits());
+        Thread th = new Thread(() -> {
+            long size = file.length();
+            FileDTO fileDTO = FileDTO.builder()
+                    .name(file.getName())
+                    .fullSize(size)
+                    .build();
+            long readBytes = 0;
+            log.info("Download started file: {}, size {}", file.getAbsolutePath(), size);
+            long startTime = System.currentTimeMillis();
+            try (FileInputStream is = new FileInputStream(file)) {
+                while (!fileDTO.isEnd()) {
+                    semaphore.acquire();
+                    if (hasError.get()) {
+                        log.info("Download file thread was interrupted");
+                        break;
+                    }
+                    fileDTO.setStart(readBytes == 0);
+                    long l = (size - readBytes) > 30_000_000 ? 30_000_000 : size - readBytes;
+                    byte[] buffer = new byte[(int) l];
+                    readBytes += is.read(buffer, 0, (int) l);
+                    String md5 = DigestUtils.md5Hex(buffer);
+                    fileDTO.setMd5(md5);
+                    fileDTO.setContent(buffer);
+                    fileDTO.setPart(fileDTO.getPart() + 1);
+                    fileDTO.setEnd(readBytes == size);
+                    ctx.writeAndFlush(new Command(CommandType.FILE_DOWNLOAD).setParameter(ParameterType.FILE_DTO, fileDTO));
+                }
+                log.info("Download finished at {} ms", System.currentTimeMillis() - startTime);
+            } catch (Exception e) {
+                log.error("Download file exception: {}", e.getMessage(), e);
+                ctx.writeAndFlush(new Command(CommandType.DOWNLOAD_ERROR));
+            }
+        });
+        th.setDaemon(true);
+        th.start();
+    }
+
+    private void userAuthProcess(ChannelHandlerContext ctx, Command command) throws Exception {
+        User user = (User) command.getParameter(ParameterType.USER);
         if (userService.isAuthorized(user)) {
+            this.user = user;
             ctx.writeAndFlush(new Command(CommandType.AUTH_OK));
-            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles("root", user)));
+            ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles("root")));
         } else {
             ctx.writeAndFlush(new Command(CommandType.AUTH_NO));
         }
@@ -159,8 +205,9 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
     private void uploadFileProcess(ChannelHandlerContext ctx, Command command) {
         try {
             FileDTO dto = (FileDTO) command.getParameter(ParameterType.FILE_DTO);
-            String fullFilePath = getPathToCurrent(dto.getPath(), dto.getOwner()) + dto.getName();
+            String fullFilePath = getPathToCurrent(dto.getPath()) + dto.getName();
             File file = new File(fullFilePath);
+
             if (!DigestUtils.md5Hex(dto.getContent()).equals(dto.getMd5())) {
                 ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR).setParameter(ParameterType.MESSAGE, "File is corrupted"));
                 Files.deleteIfExists(Paths.get(fullFilePath));
@@ -170,31 +217,31 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
                 ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR).setParameter(ParameterType.MESSAGE, file.getName() + " already exists"));
                 return;
             }
-            FileOutputStream os = new FileOutputStream(file, true);
-            if (!dto.isEnd()) {
-                os.write(dto.getContent());
-                ctx.writeAndFlush(new Command(CommandType.NEXT_PART));
-            } else {
-                os.write(dto.getContent());
-                if (file.length() != dto.getFullSize()) {
-                    ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR).setParameter(ParameterType.MESSAGE, "File is corrupted"));
-                    Files.deleteIfExists(Paths.get(fullFilePath));
+            try (FileOutputStream os = new FileOutputStream(file, true)) {
+                if (!dto.isEnd()) {
+                    os.write(dto.getContent());
+                    ctx.writeAndFlush(new Command(CommandType.NEXT_PART));
                 } else {
-                    ctx.writeAndFlush(new Command(CommandType.FILE_UPLOAD_OK));
-                    ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(dto.getPath(), dto.getOwner())));
+                    os.write(dto.getContent());
+                    if (file.length() != dto.getFullSize()) {
+                        ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR).setParameter(ParameterType.MESSAGE, "File is corrupted"));
+                        Files.deleteIfExists(Paths.get(fullFilePath));
+                    } else {
+                        ctx.writeAndFlush(new Command(CommandType.CONTENT_RESPONSE).setAll(getUserFiles(dto.getPath())));
+                    }
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Upload file error: {}", e.getMessage(), e);
-            ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR));
+            ctx.writeAndFlush(new Command(CommandType.UPLOAD_ERROR).setParameter(ParameterType.MESSAGE, "Unknown error"));
         }
     }
 
-    private Map<ParameterType, Object> getUserFiles(String current, User user) throws IOException {
+    private Map<ParameterType, Object> getUserFiles(String current) throws Exception {
         Map<ParameterType, Object> parameters = new HashMap<>();
         List<String> directories = new ArrayList<>();
         List<String> files = new ArrayList<>();
-        Files.walkFileTree(Paths.get(getPathToCurrent(current, user)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
+        Files.walkFileTree(Paths.get(getPathToCurrent(current)), Collections.singleton(FileVisitOption.FOLLOW_LINKS), 1, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                 if (file.toFile().isDirectory()) {
@@ -216,7 +263,7 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
         return parameters;
     }
 
-    private String getPathToCurrent(String current, User user) throws IOException {
+    private String getPathToCurrent(String current) throws Exception {
         StringBuilder sb = new StringBuilder(userService.getRootPath(user));
         sb.append(File.separator);
         if (!current.equals("root") && !current.equals("/")) {
@@ -226,13 +273,6 @@ public class ServerCommandHandler extends SimpleChannelInboundHandler<Command> {
             }
         }
         return sb.toString();
-    }
-
-    private String getFileChecksum(File file) throws IOException {
-        String md5;
-        InputStream is = Files.newInputStream(Paths.get(file.toURI()));
-        md5 = DigestUtils.md5Hex(is);
-        return md5;
     }
 
     private void sendErrorMessage(ChannelHandlerContext ctx, String message) {

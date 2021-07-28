@@ -23,7 +23,7 @@ public class ClientRunner extends Application {
             primaryStage.close();
             log.info("Client closed");
         });
-        primaryStage.getIcons().add(new Image(getClass().getClassLoader().getResourceAsStream("client1.png")));
+        primaryStage.getIcons().add(new Image("client2.png"));
         primaryStage.setMinWidth(600);
         primaryStage.setMinHeight(400);
         primaryStage.show();

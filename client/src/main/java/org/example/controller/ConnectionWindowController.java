@@ -72,6 +72,7 @@ public class ConnectionWindowController implements Initializable {
         try {
             properties = new Properties();
             propertiesPath = Paths.get(getClass().getClassLoader().getResource("connection.properties").getPath());
+            System.out.println(propertiesPath.toAbsolutePath());
             if (Files.notExists(propertiesPath)) {
                 Files.createFile(propertiesPath);
             }

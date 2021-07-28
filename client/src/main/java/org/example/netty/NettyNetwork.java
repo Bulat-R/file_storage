@@ -11,7 +11,9 @@ import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.codec.serialization.ObjectEncoder;
 import lombok.extern.slf4j.Slf4j;
+import org.example.controller.Config;
 import org.example.model.command.Command;
+import org.example.model.command.ParameterType;
 
 import java.net.ConnectException;
 import java.util.concurrent.CountDownLatch;
@@ -59,6 +61,7 @@ public class NettyNetwork {
 
     public void writeMessage(Command command) throws ConnectException {
         if (isConnected()) {
+            command.setParameter(ParameterType.USER, Config.getUser());
             channel.writeAndFlush(command);
             log.info("Command sent: {}", command);
         } else {

@@ -20,19 +20,20 @@ public class UploadTask extends Task<Long> {
     private final String path;
     private final Semaphore semaphore;
     private final NettyNetwork network;
-    private final AtomicBoolean isUploadError;
+    private final AtomicBoolean hasError;
 
-    public UploadTask(File file, String path, Semaphore semaphore, NettyNetwork network, AtomicBoolean isUploadError) {
+    public UploadTask(File file, String path, Semaphore semaphore, NettyNetwork network, AtomicBoolean hasError) {
         this.file = file;
         this.path = path;
         this.semaphore = semaphore;
         this.network = network;
-        this.isUploadError = isUploadError;
+        this.hasError = hasError;
     }
 
     @Override
     protected Long call() throws Exception {
-        isUploadError.set(false);
+        hasError.set(false);
+        semaphore.release(semaphore.drainPermits());
         long size = file.length();
         FileDTO fileDTO = FileDTO.builder()
                 .owner(Config.getUser())
@@ -44,7 +45,7 @@ public class UploadTask extends Task<Long> {
         try (FileInputStream is = new FileInputStream(file)) {
             while (!fileDTO.isEnd()) {
                 semaphore.acquire();
-                if (isUploadError.get()) {
+                if (hasError.get()) {
                     break;
                 }
                 fileDTO.setStart(readBytes == 0);

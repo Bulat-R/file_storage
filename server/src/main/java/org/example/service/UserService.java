@@ -8,5 +8,5 @@ public interface UserService {
 
     boolean isAuthorized(User user);
 
-    String getRootPath(User user) throws IOException;
+    String getRootPath(User user) throws Exception;
 }

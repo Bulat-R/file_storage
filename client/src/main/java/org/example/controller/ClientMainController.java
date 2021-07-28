@@ -66,7 +66,8 @@ public class ClientMainController {
     private boolean isManualDisconnect;
     private boolean isConnectWindowClosed;
     private Semaphore semaphore;
-    private final AtomicBoolean isUploadError = new AtomicBoolean(false);
+    private final AtomicBoolean hasError = new AtomicBoolean(false);
+    private File fileForDownload;
 
     @FXML
     private void connectionButtonHandling() {
@@ -81,7 +82,14 @@ public class ClientMainController {
 
     @FXML
     private void upload() {
-        uploadProcess();
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
+        fileChooser.setTitle("Choose upload file");
+        File file = fileChooser.showOpenDialog(mainPane.getScene().getWindow());
+        UploadTask task = new UploadTask(file, getFullPath(new Label()), semaphore, network, hasError);
+        if (file != null) {
+            new UploadProcessWindow(task);
+        }
     }
 
     @FXML
@@ -89,12 +97,12 @@ public class ClientMainController {
         TextInputDialog dialog = new TextInputDialog();
         dialog.setTitle("Create directory");
         dialog.setHeaderText("Enter directory name");
+        dialog.setResizable(true);
         Optional<String> name = dialog.showAndWait();
         if (name.isPresent() && isValidName(name.get())) {
             Label last = (Label) pathHBox.getChildren().get(pathHBox.getChildren().size() - 1);
             Command command = new Command(CommandType.CREATE_DIR)
                     .setParameter(ParameterType.DIR_NAME, name.get())
-                    .setParameter(ParameterType.USER, Config.getUser())
                     .setParameter(ParameterType.CURRENT, getFullPath(last));
             try {
                 network.writeMessage(command);
@@ -131,26 +139,17 @@ public class ClientMainController {
                         case CONTENT_RESPONSE:
                             refreshClientContent(command);
                             break;
-                        case DELETE_OK:
-                        case RENAME_OK:
-                        case CREATE_OK:
-                            Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
-                            break;
                         case ERROR:
                             Platform.runLater(() -> showAlertWindow((String) command.getParameter(ParameterType.MESSAGE), Alert.AlertType.ERROR));
                             break;
                         case FILE_DOWNLOAD:
                             Platform.runLater(() -> downloadFileSave(command));
                             break;
-                        case FILE_UPLOAD_OK:
-                            Platform.runLater(() -> showAlertWindow("Successful", Alert.AlertType.INFORMATION));
-                            semaphore.release();
-                            break;
                         case NEXT_PART:
                             semaphore.release();
                             break;
                         case UPLOAD_ERROR:
-                            isUploadError.set(true);
+                            hasError.set(true);
                             semaphore.release();
                             Platform.runLater(() -> showAlertWindow((String) command.getParameter(ParameterType.MESSAGE), Alert.AlertType.ERROR));
                             break;
@@ -165,26 +164,34 @@ public class ClientMainController {
 
     private void downloadFileSave(Command command) {
         FileDTO dto = (FileDTO) command.getParameter(ParameterType.FILE_DTO);
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
-        fileChooser.setTitle("Save file");
-        fileChooser.setInitialFileName(dto.getName());
-        File file = fileChooser.showSaveDialog(mainPane.getScene().getWindow());
-        if (file != null) {
-            try (FileOutputStream os = new FileOutputStream(file)) {
-                os.write(dto.getContent());
-            } catch (IOException e) {
-                log.error("File save exception: {}", e.getMessage(), e);
-            }
-            if (file.length() != dto.getFullSize() || !dto.getMd5().equals(getFileChecksum(file))) {
-                showAlertWindow("File is corrupted", Alert.AlertType.ERROR);
-                try {
-                    Files.deleteIfExists(file.toPath());
-                } catch (IOException e) {
-                    log.error("Corrupted file delete exception: {}", e.getMessage(), e);
+        if (dto.isStart()) {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
+            fileChooser.setTitle("Save file");
+            fileChooser.setInitialFileName(dto.getName());
+            fileForDownload = fileChooser.showSaveDialog(mainPane.getScene().getWindow());
+        }
+        if (fileForDownload != null) {
+            try (FileOutputStream os = new FileOutputStream(fileForDownload, true)) {
+                if (!DigestUtils.md5Hex(dto.getContent()).equals(dto.getMd5())) {
+                    network.writeMessage(new Command(CommandType.DOWNLOAD_ERROR));
+                    Files.deleteIfExists(fileForDownload.toPath());
+                    return;
                 }
+                if (!dto.isEnd()) {
+                    os.write(dto.getContent());
+                    network.writeMessage(new Command(CommandType.NEXT_PART));
+                } else {
+                    os.write(dto.getContent());
+                    if (fileForDownload.length() != dto.getFullSize()) {
+                        network.writeMessage(new Command(CommandType.DOWNLOAD_ERROR));
+                        Files.deleteIfExists(fileForDownload.toPath());
+                    }
+                    fileForDownload = null;
+                }
+            } catch (Exception e) {
+                log.error("Download file exception: {}", e.getMessage(), e);
             }
-            showAlertWindow("File saved successful", Alert.AlertType.INFORMATION);
         }
     }
 
@@ -198,27 +205,6 @@ public class ClientMainController {
         uploadButton.setDisable(true);
         createButton.setDisable(true);
         network.close();
-    }
-
-    private void uploadProcess() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
-        fileChooser.setTitle("Choose upload file");
-        File file = fileChooser.showOpenDialog(mainPane.getScene().getWindow());
-        UploadTask task = new UploadTask(file, getFullPath(new Label()), semaphore, network, isUploadError);
-        if (file != null) {
-            new ProgressBarWindow(task);
-        }
-    }
-
-    private String getFileChecksum(File file) {
-        String md5 = "";
-        try (InputStream is = Files.newInputStream(Paths.get(file.toURI()))) {
-            md5 = DigestUtils.md5Hex(is);
-        } catch (Exception e) {
-            log.error("File checkSum exception: {}", e.getMessage(), e);
-        }
-        return md5;
     }
 
     private void showConnectionWindow() throws IOException {
@@ -246,7 +232,6 @@ public class ClientMainController {
     private void contentRequest(String curren, ContentActionType actionType) {
         Command command = new Command(CommandType.CONTENT_REQUEST)
                 .setParameter(ParameterType.CONTENT_ACTION, actionType)
-                .setParameter(ParameterType.USER, Config.getUser())
                 .setParameter(ParameterType.CURRENT, curren);
         switch (actionType) {
             case DELETE:
@@ -262,6 +247,7 @@ public class ClientMainController {
                 String oldName = curren.substring(curren.lastIndexOf("/") + 1);
                 TextInputDialog dialog = new TextInputDialog(oldName);
                 dialog.setTitle("Rename");
+                dialog.setResizable(true);
                 dialog.setHeaderText("Enter new name");
                 Optional<String> newName = dialog.showAndWait();
                 if (newName.isPresent() && isValidName(newName.get()) && !oldName.equals(newName.get())) {
@@ -300,14 +286,13 @@ public class ClientMainController {
 
     private void authRequest() {
         try {
-            network.writeMessage(new Command(CommandType.AUTH_REQUEST).setParameter(ParameterType.USER, Config.getUser()));
+            network.writeMessage(new Command(CommandType.AUTH_REQUEST));
         } catch (ConnectException e) {
             log.error("Connection exception: {}", e.getMessage(), e);
             showAlertWindow("No connection", Alert.AlertType.ERROR);
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void refreshClientContent(Command command) {
         Platform.runLater(() -> {
             filesTilePane.getChildren().clear();
