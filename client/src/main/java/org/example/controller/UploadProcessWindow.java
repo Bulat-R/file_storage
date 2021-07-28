@@ -21,10 +21,11 @@ public class UploadProcessWindow extends Stage {
         AnchorPane.setRightAnchor(progressBar, 0.0);
         AnchorPane.setTopAnchor(progressBar, 0.0);
         task.addEventHandler(WorkerStateEvent.WORKER_STATE_SUCCEEDED, event -> close());
+        task.addEventHandler(WorkerStateEvent.WORKER_STATE_FAILED, event -> close());
         Scene scene = new Scene(anchorPane, 200, 20);
-        initStyle(StageStyle.UNDECORATED);
         setTitle("Upload progress");
         setScene(scene);
+        setOnCloseRequest(event -> task.cancel());
         initModality(Modality.APPLICATION_MODAL);
         new Thread(task).start();
         showAndWait();

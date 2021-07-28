@@ -46,6 +46,7 @@ public class UploadTask extends Task<Long> {
             while (!fileDTO.isEnd()) {
                 semaphore.acquire();
                 if (hasError.get()) {
+                    failed();
                     break;
                 }
                 fileDTO.setStart(readBytes == 0);

@@ -88,6 +88,7 @@ public class ClientMainController {
         File file = fileChooser.showOpenDialog(mainPane.getScene().getWindow());
         UploadTask task = new UploadTask(file, getFullPath(new Label()), semaphore, network, hasError);
         if (file != null) {
+            semaphore.release(semaphore.drainPermits());
             new UploadProcessWindow(task);
         }
     }
