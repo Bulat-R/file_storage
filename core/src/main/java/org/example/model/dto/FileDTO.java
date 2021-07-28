@@ -13,8 +13,11 @@ public class FileDTO implements Serializable {
     private User owner;
     private String name;
     private String path;
-    private Long size;
+    private Long fullSize;
     private String md5;
     @ToString.Exclude
     private byte[] content;
+    private boolean isStart;
+    private boolean isEnd;
+    private int part;
 }

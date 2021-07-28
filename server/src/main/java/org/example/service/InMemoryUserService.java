@@ -32,7 +32,7 @@ public class InMemoryUserService implements UserService {
     }
 
     @Override
-    public String getRootPath(User user) throws IOException {
+    public String getRootPath(User user) throws Exception {
         File file = new File(Config.storagePath + File.separator + user.getEmail());
         try {
             if (Files.notExists(file.toPath())) {
@@ -40,8 +40,8 @@ public class InMemoryUserService implements UserService {
                 log.info("Folder for user {} created at {}", user.getEmail(), file.getAbsolutePath());
             }
         } catch (IOException e) {
-            log.error("User folder create exception: {}", e.getMessage(), e);
-            throw new IOException(e);
+            log.error("User folder create exception: {}", e.getMessage());
+            throw e;
         }
         return file.getAbsolutePath();
     }
